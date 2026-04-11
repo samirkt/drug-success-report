@@ -1,0 +1,38 @@
+[project]
+name = "drug-success-report"
+version = "0.1.0"
+description = "Automated pipeline for reconstructing drug-development trajectories and computing phase-transition success rates"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.84.0",
+    "fuzzywuzzy>=0.18.0",
+    "lxml>=6.0.2",
+    "matplotlib>=3.10.8",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.3",
+    "plotly>=6.0.0",
+    "psycopg[binary]>=3.3.3",
+    "psycopg2-binary>=2.9.11",
+    "python-levenshtein>=0.27.3",
+    "requests>=2.32.5",
+    "tabulate>=0.9.0",
+    "tqdm>=4.67.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipeline", "src/utils"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "numpy>=2.0.0",
+]

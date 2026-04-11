@@ -1,0 +1,77 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Running & Testing
+
+All commands should be run from `src/`.
+
+```bash
+# Run the pipeline (from project root)
+python src/run_pipeline.py --source aact --keyword peptide --output ./docs --formats html excel
+
+# Run all tests
+./run_tests.sh
+
+# Run tests for a specific component
+./run_tests.sh --include aggregation
+./run_tests.sh --include ingestion,clustering
+
+# Verbose output (show every test name)
+./run_tests.sh -v
+
+# Show only failing modules
+./run_tests.sh -f
+```
+
+`run_tests.sh` skips `test_pipeline.py` by default (integration test). Pass `--include pipeline` to run it explicitly.
+
+## Architecture
+
+### Data flow
+
+Each stage accepts and returns typed dataclasses from `pipeline/models.py`:
+
+```
+TrialIngestionStage           -> TrialTable
+CandidateClusteringStage      -> CandidateTable
+AttributeClassificationStage  -+  (parallel via ThreadPoolExecutor)
+OutcomeAdjudicationStage      -+  -> AttributeTable, OutcomeTable
+FunnelAggregationStage        -> FunnelResults
+ReportingStage                -> ReportOutput
+```
+
+The orchestrator (`pipeline/pipeline.py`) holds `PipelineConfig` and wires all stages. Stages 3a and 3b share a single `KnowledgeCache` instance and run concurrently -- the cache uses per-thread SQLite connections in WAL mode.
+
+### Key design decisions
+
+- **`pipeline/models.py`** is the single source of truth for all inter-stage types. Add new fields here before touching any stage.
+- **`pipeline/knowledge_cache.py`** -- SQLite-backed LLM result cache keyed by SHA-256 of `drug_name|indication` (classification) or `drug_name|indication|highest_phase` (adjudication). Avoids redundant API calls on re-runs.
+- **LLM prompt editing**: `classification.py` and `adjudication.py` load prompts from `pipeline/stages/prompts/*.txt` via `utils/prompt_runner.py`. To change LLM behavior, edit the `.txt` prompt files, not the Python.
+- **Clustering strategies** (`pipeline/stages/clustering.py`) follow a Strategy pattern -- `StringMatchStrategy`, `HybridStrategy` (preferred, uses MeSH terms with text fallback), and `EmbeddingsStrategy` (not yet implemented) all implement `ClusteringStrategy.cluster()`.
+- **`pipeline/drugbank_norm.py`** -- builds two deduplicated lookup DataFrames from `drugbank_approvals.csv`: exact match by `query_name` and normalized match by `query_norm`. Clustering uses these for DrugBank ID assignment, then re-deduplicates candidates by `(drugbank_id, mesh_indication)`.
+
+### Non-obvious patterns
+
+- **Tiered LLM routing** (`utils/tiered_router.py`): Classification and adjudication run candidates through Sonnet first, then escalate low-confidence or unknown results to Opus. This is controlled by `escalation_predicate` functions, not config. The `CostLedger` tracks per-stage, per-tier API costs.
+- **Outcome-boosted effective level**: In aggregation, an APPROVED candidate counts as >= Phase 3 and COMMERCIALIZED counts as >= Market when computing funnel numerators -- even if `highest_phase` from trials is lower. This prevents under-counting.
+- **Peptide-only optimization**: When `peptide_only_report=True`, the pipeline classifies all candidates first, filters to peptides, then adjudicates only the filtered set. Non-peptides skip the expensive adjudication LLM calls entirely.
+- **Deterministic failure shortcut**: Adjudication skips LLM calls when all of a candidate's trials are TERMINATED/WITHDRAWN -- returns FAILED_PHASE_X directly.
+- **M x N trial expansion**: Ingestion produces one row per (study, drug, condition) tuple. A trial with 3 drugs and 2 conditions yields 6 RawTrial rows. Clustering re-groups them.
+- **P-value inconsistency flagging**: Reporting flags candidates where a statistically significant result (p <= 0.05) appears at a failed phase, or a non-significant result at Phase 3 but the candidate is Approved/Commercialized.
+
+### Environment variables
+
+| Variable | Required for | Purpose |
+|---|---|---|
+| `CLAUDE_API_KEY_UCD` | LLM stages | Anthropic API key used by `utils/prompt_runner.py` |
+| `AACT_DB_USER` | `--source aact` | AACT PostgreSQL username |
+| `AACT_DB_PASSWORD` | `--source aact` | AACT PostgreSQL password |
+
+### Test fixtures
+
+`tests/conftest.py` provides shared fixtures for every stage's input/output types. Individual test files should use these fixtures rather than constructing model objects inline.
+
+### Implementation status
+
+All pipeline stages (ingestion, clustering, classification, adjudication, aggregation, reporting) are fully implemented. The REST API ingestion source (`--source api`) and `EmbeddingsStrategy` for clustering are not yet implemented and raise `NotImplementedError`. Config flags `use_literature_lookup` and `use_regulatory_data` are accepted but not yet integrated.

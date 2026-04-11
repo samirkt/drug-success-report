@@ -1,0 +1,642 @@
+[
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 2 only with no evidence of progression to Phase 3, suggesting discontinuation after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Nesiritide (Natrecor) was FDA approved in 2001 for acute decompensated heart failure, not cardiomyopathies specifically, suggesting this indication did not progress to approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 3 only with no evidence of approval for this indication, suggesting discontinuation before regulatory submission.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies; teriparatide (Forteo) was FDA approved in 2002 for osteoporosis including male osteoporosis.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": "2002-11-26",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 3 only with no evidence of approval for schizophrenia indication, suggesting discontinuation before regulatory submission.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 2 only with no evidence of progression to Phase 3, suggesting discontinuation after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 2 only with no evidence of progression to Phase 3, suggesting discontinuation after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies; exenatide (Byetta) was FDA approved in 2005 for type 2 diabetes, repurposed for cardiovascular indications.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": "2005-04-28",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies; nesiritide was FDA approved in 2001 for acute decompensated heart failure.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": "2001-08-10",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "APPROVED",
+    "confidence": "HIGH",
+    "reasoning": "Nesiritide was FDA approved in 2001 for congestive heart failure, Phase 3 data supports approved indication.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": "2001-08-10",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 2 only with no evidence of progression to Phase 3, suggesting discontinuation after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "APPROVED",
+    "confidence": "HIGH",
+    "reasoning": "Teriparatide (Forteo) was FDA approved in 2002 for osteoporosis; Phase 3 for postmenopausal osteoporosis is part of approved indication.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": "2002-11-26",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies; nesiritide was FDA approved in 2001 for congestive heart failure.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": "2001-08-10",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies; exenatide (Byetta) was FDA approved in 2005 for type 2 diabetes.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": "2005-04-28",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies; exenatide was FDA approved in 2005 for type 2 diabetes.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": "2005-04-28",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 2 only with no evidence of progression to Phase 3, suggesting discontinuation after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 2 only with no evidence of progression to Phase 3, suggesting discontinuation after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 3 only with no evidence of approval, suggesting discontinuation before regulatory submission.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 1 only with no evidence of progression to later phases, suggesting discontinuation after early testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 3 only with no evidence of approval, suggesting discontinuation before regulatory submission.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown with no other development information available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "APPROVED",
+    "confidence": "HIGH",
+    "reasoning": "Romidepsin (Istodax) was FDA approved in 2009 for cutaneous T-cell lymphoma, Phase 2 data supported approval.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": "2009-11-05",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Phase 2 only with no evidence of progression to Phase 3, suggesting discontinuation after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies; liraglutide (Victoza) was FDA approved in 2010 for type 2 diabetes.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": "2010-01-25",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "APPROVED",
+    "confidence": "HIGH",
+    "reasoning": "Liraglutide (Victoza) was FDA approved in 2010 for diabetes; Phase 3 data supported approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": "2010-01-25",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 indicates post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "APPROVED",
+    "confidence": "HIGH",
+    "reasoning": "Liraglutide was FDA approved in 2010 (Victoza) for type 2 diabetes; Phase 3 data supported approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": "2010-01-25",
+    "commercialization_date": null
+  },
+  {
+    "outcome": "APPROVED",
+    "confidence": "HIGH",
+    "reasoning": "Liraglutide was FDA approved in 2014 (Saxenda) for obesity; Phase 3 data supported approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": "2014-12-23",
+    "commercialization_date": null
+  }
+]

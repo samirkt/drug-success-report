@@ -1,0 +1,3 @@
+Classify the following drug-indication candidates:
+
+{{CANDIDATES_BLOCK}}

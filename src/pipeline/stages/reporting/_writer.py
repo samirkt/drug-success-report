@@ -1,0 +1,407 @@
+"""I/O layer: serialize ReportOutput to HTML, CSV, Excel, and xlsx data export."""
+
+from __future__ import annotations
+
+import base64
+import os
+
+import numpy as np
+
+from ...models import ReportOutput
+from . import _compute
+
+
+def write_report(
+    report: ReportOutput,
+    output_path: str,
+    formats: list[str],
+    export_data: dict,
+    sections: list[dict] | None = None,
+    exec_summary: str = "",
+    introduction: str = "",
+) -> None:
+    """Serialize report tables and figures to output_path."""
+    os.makedirs(output_path, exist_ok=True)
+
+    # Save all PNG figures to output dir
+    #for fig_name, fig_bytes in report.figures.items():
+    #    if fig_bytes and not fig_name.startswith("disease_spider_"):
+    #        with open(os.path.join(output_path, f"{fig_name}.png"), "wb") as f:
+    #            f.write(fig_bytes)
+
+    write_csv(report, output_path)
+    write_data_xlsx(export_data, output_path)
+
+    if "html" in formats:
+        write_html(report, output_path, sections=sections,
+                   exec_summary=exec_summary, introduction=introduction)
+
+    if "excel" in formats:
+        write_excel(report, output_path)
+
+
+def write_csv(report: ReportOutput, output_path: str) -> None:
+    import csv
+    rows = report.tables.get("candidate_summary", [])
+    if not rows:
+        return
+    csv_path = os.path.join(output_path, "candidate_summary.csv")
+    headers = list(rows[0].keys())
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_html(
+    report: ReportOutput,
+    output_path: str,
+    sections: list[dict] | None = None,
+    exec_summary: str = "",
+    introduction: str = "",
+) -> None:
+    from datetime import date
+
+    from . import _html_template as tmpl
+
+    if sections is not None:
+        _write_html_narrative(report, output_path, sections, exec_summary, introduction)
+    else:
+        _write_html_legacy(report, output_path)
+
+    # Always generate the standalone interactive heatmaps file
+    #_write_interactive_heatmaps(report, output_path)
+
+
+def _write_html_narrative(
+    report: ReportOutput,
+    output_path: str,
+    sections: list[dict],
+    exec_summary: str,
+    introduction: str,
+) -> None:
+    """Render a BIO/QLS-style narrative report with interleaved text and figures."""
+    from datetime import date
+
+    from . import _html_template as tmpl
+
+    parts = [tmpl.html_head("Clinical Development Success Rates")]
+
+    # Title page
+    parts.append(tmpl.title_page(
+        "Clinical Development Success Rates and Contributing Factors",
+        "Automated Pipeline Analysis",
+        "Generated " + date.today().strftime("%B %Y"),
+    ))
+
+    # Executive summary
+    if exec_summary:
+        parts.append(tmpl.executive_summary_block(exec_summary))
+
+    # Table of contents
+    parts.append(_build_toc(sections))
+
+    # Introduction
+    if introduction:
+        parts.append('<h2>Introduction</h2>\n')
+        paragraphs = introduction.strip().split("\n\n")
+        parts.append('<div class="narrative">\n')
+        for p in paragraphs:
+            p = p.strip()
+            if p:
+                parts.append(f'<p>{p}</p>\n')
+        parts.append('</div>\n')
+
+    # -- Render sections grouped into parts --
+    PART_MAP: dict[str, tuple[str | None, int]] = {
+        "funnel":            (None, 1),
+        "disease_breakdown": (None, 1),
+        "heatmaps":          (None, 1),
+        "bubble_heatmaps":   (None, 1),
+        "loa":               (None, 1),
+        "oncology":          (None, 1),
+        "timeline":          ("Part 2. Drug Development Timelines", 2),
+        "time_period":       ("Part 3. Temporal and Structural Analysis", 3),
+        "modality_trend":    (None, 3),
+        "sponsor":           (None, 3),
+        "spider":            ("Part 1. Phase Transition Success and Likelihood of Approval", 1),
+        "candidate_summary": (None, 5),
+    }
+
+    fig_counter = [0]
+    table_counter = [0]
+    current_part = 0
+
+    for section in sections:
+        key = section["key"]
+        part_heading, part_num = PART_MAP.get(key, (None, 0))
+
+        # Emit part heading when entering a new part
+        if part_num > current_part and part_heading:
+            parts.append(f'<h2>{part_heading}</h2>\n')
+            current_part = part_num
+
+        sec_figures = section.get("figures", {})
+        sec_tables = section.get("tables", {})
+        sec_html_figures = section.get("html_figures", {})
+
+        # Appendix: candidate summary
+        if key == "candidate_summary":
+            parts.append('<div class="appendix">\n')
+            parts.append('<h2>Appendix: Candidate Summary</h2>\n')
+            if "candidate_summary" in sec_tables:
+                table_counter[0] += 1
+                parts.append(tmpl.render_table(
+                    sec_tables["candidate_summary"],
+                    "Individual candidate development summary.",
+                    table_counter[0],
+                ))
+            parts.append('</div>\n')
+            continue
+
+        title = section.get("title", key.replace("_", " ").title())
+        narrative = section.get("narrative", "")
+
+        if narrative:
+            parts.append(f'<h3>{title}</h3>\n')
+            parts.append(tmpl.render_narrative(
+                narrative,
+                sec_figures,
+                sec_tables,
+                sec_html_figures,
+                fig_counter,
+                table_counter,
+            ))
+        else:
+            # No narrative -- dump figures and tables directly
+            parts.append(f'<h3>{title}</h3>\n')
+            for fig_key, fig_bytes in sec_figures.items():
+                fig_counter[0] += 1
+                caption = fig_key.replace("_", " ").title()
+                parts.append(tmpl.render_figure(fig_bytes, caption, fig_counter[0]))
+            for html_key, html_content in sec_html_figures.items():
+                fig_counter[0] += 1
+                caption = html_key.replace("_", " ").title()
+                parts.append(tmpl.render_html_figure(html_content, caption, fig_counter[0]))
+            for tbl_key, tbl_rows in sec_tables.items():
+                table_counter[0] += 1
+                caption = tbl_key.replace("_", " ").title()
+                parts.append(tmpl.render_table(tbl_rows, caption, table_counter[0]))
+
+    parts.append('</body>\n</html>')
+
+    html_path = os.path.join(output_path, "index.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+
+def _build_toc(sections: list[dict]) -> str:
+    """Build a table-of-contents block from the sections list."""
+    PART_LABELS: dict[str, str] = {
+        "spider":          "Part 1. Phase Transition Success and Likelihood of Approval",
+        "timeline":        "Part 2. Drug Development Timelines",
+        "time_period":     "Part 3. Temporal and Structural Analysis",
+    }
+    PART_KEYS = set(PART_LABELS.keys())
+
+    items: list[str] = []
+    for section in sections:
+        key = section["key"]
+        if key in PART_KEYS:
+            items.append(f'  <li class="part">{PART_LABELS[key]}</li>')
+        if key == "candidate_summary":
+            items.append('  <li class="part">Appendix</li>')
+            items.append('  <li class="section">Candidate Summary</li>')
+        else:
+            title = section.get("title", key.replace("_", " ").title())
+            items.append(f'  <li class="section">{title}</li>')
+
+    return (
+        '<div class="toc">\n'
+        '  <h2>Table of Contents</h2>\n'
+        '  <ul>\n'
+        + "\n".join(items) + "\n"
+        '  </ul>\n'
+        '</div>\n'
+    )
+
+
+def _write_html_legacy(report: ReportOutput, output_path: str) -> None:
+    """Original flat HTML dump -- used when no sections are provided."""
+    parts = ['<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>']
+    parts.append("<h1>Peptide Pipeline Report</h1>")
+    parts.append(f"<p>{report.summary_text}</p>")
+
+    figure_order = [
+        "disease_breakdown", "modality_heatmap", "disease_heatmap",
+        "loa_by_disease", "loa_by_modality", "timeline_by_disease", "oncology_comparison",
+        "time_period_comparison", "modality_proportion", "sponsor_concentration",
+    ]
+    figure_order.append("overall_spider")
+    figure_order.extend(
+        sorted(k for k in report.figures if k.startswith("disease_spider_"))
+    )
+    figure_order.append("modality_breakdown")
+    for name in figure_order:
+        if name not in report.figures:
+            continue
+        b64 = base64.b64encode(report.figures[name]).decode()
+        parts.append(f"<h2>{name}</h2><img src='data:image/png;base64,{b64}' />")
+
+    for name in ["modality_bubble_heatmap", "disease_bubble_heatmap", "modality_proportion"]:
+        if name in report.html_figures:
+            pretty = name.replace("_", " ").title()
+            parts.append(f"<h2>{pretty}</h2>")
+            parts.append(f"<div>{report.html_figures[name]}</div>")
+
+    non_summary_tables = [k for k in report.tables if k != "candidate_summary"]
+    table_order = non_summary_tables + (
+        ["candidate_summary"] if "candidate_summary" in report.tables else []
+    )
+    for name in table_order:
+        rows = report.tables[name]
+        parts.append(f"<h2>{name}</h2>")
+        if rows:
+            headers = list(rows[0].keys())
+            parts.append("<table border='1'><tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr>")
+            for row in rows:
+                parts.append("<tr>" + "".join(f"<td>{row.get(h, '')}</td>" for h in headers) + "</tr>")
+            parts.append("</table>")
+
+    parts.append("</body></html>")
+    html_path = os.path.join(output_path, "index.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+
+def _write_interactive_heatmaps(report: ReportOutput, output_path: str) -> None:
+    """Write standalone interactive heatmaps HTML file."""
+    if not report.html_figures:
+        return
+    interactive_parts = [
+        '<!DOCTYPE html><html><head><meta charset="utf-8">',
+        '<title>Interactive Bubble Heatmaps</title></head><body>',
+    ]
+    for name in ["modality_bubble_heatmap", "disease_bubble_heatmap", "modality_proportion"]:
+        if name in report.html_figures:
+            pretty = name.replace("_", " ").title()
+            interactive_parts.append(f"<h2>{pretty}</h2>")
+            interactive_parts.append(f"<div>{report.html_figures[name]}</div>")
+    interactive_parts.append("</body></html>")
+    interactive_path = os.path.join(output_path, "interactive_heatmaps.html")
+    with open(interactive_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(interactive_parts))
+
+
+def write_excel(report: ReportOutput, output_path: str) -> None:
+    import openpyxl
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    for name, rows in report.tables.items():
+        ws = wb.create_sheet(title=name[:31])
+        if rows:
+            headers = list(rows[0].keys())
+            ws.append(headers)
+            for row in rows:
+                ws.append([row.get(h, "") for h in headers])
+
+    xlsx_path = os.path.join(output_path, "report.xlsx")
+    wb.save(xlsx_path)
+
+
+def write_data_xlsx(export_data: dict, output_path: str) -> None:
+    """Export heatmap + LOA + timeline data to structured xlsx."""
+    import openpyxl
+
+    if not export_data:
+        return
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    headers = [
+        "Row Label",
+        "P1\u2192P2 Rate", "P1\u2192P2 n", "P1\u2192P2 denom", "P1\u2192P2 CI Low", "P1\u2192P2 CI High",
+        "P2\u2192P3 Rate", "P2\u2192P3 n", "P2\u2192P3 denom", "P2\u2192P3 CI Low", "P2\u2192P3 CI High",
+        "P3\u2192Appr Rate", "P3\u2192Appr n", "P3\u2192Appr denom", "P3\u2192Appr CI Low", "P3\u2192Appr CI High",
+        "Appr\u2192Mkt Rate", "Appr\u2192Mkt n", "Appr\u2192Mkt denom", "Appr\u2192Mkt CI Low", "Appr\u2192Mkt CI High",
+    ]
+
+    def _write_grid_sheet(ws, labels, rates, nums, denoms, ci_bounds):
+        ws.append(headers)
+        for i, label in enumerate(labels):
+            row = [label]
+            for j in range(4):
+                r = rates[i, j]
+                rate_val = r if not np.isnan(r) else None
+                lo, hi = ci_bounds[i][j]
+                row.extend([rate_val, int(nums[i, j]), int(denoms[i, j]),
+                            lo if rate_val is not None else None,
+                            hi if rate_val is not None else None])
+            ws.append(row)
+
+    # Heatmap sheets
+    if "heatmap_modality" in export_data:
+        mod_labels, _, mod_rates, mod_denoms, mod_nums, mod_cis = export_data["heatmap_modality"]
+        ws = wb.create_sheet(title="Modality Heatmap")
+        _write_grid_sheet(ws, mod_labels, mod_rates, mod_nums, mod_denoms, mod_cis)
+
+    if "heatmap_disease" in export_data:
+        da_labels, _, da_rates, da_denoms, da_nums, da_cis = export_data["heatmap_disease"]
+        ws = wb.create_sheet(title="Disease Heatmap")
+        _write_grid_sheet(ws, da_labels, da_rates, da_nums, da_denoms, da_cis)
+
+    # Modality Bubble views per disease area
+    bio_qls_funnel = export_data.get("heatmap_modality_bubble_funnel")
+    if bio_qls_funnel:
+        for da in sorted(bio_qls_funnel.by_disease_area.keys()):
+            sheet_name = f"Modality - {da}"[:31]
+            labels, _, rates, denoms, nums, cis = _compute.heatmap_grid(
+                bio_qls_funnel, disease_area=da
+            )
+            if labels:
+                ws = wb.create_sheet(title=sheet_name)
+                _write_grid_sheet(ws, labels, rates, nums, denoms, cis)
+
+    # Disease Bubble views per modality
+    bio_qls_funnel_da = export_data.get("heatmap_disease_bubble_funnel")
+    if bio_qls_funnel_da:
+        for mod in sorted(bio_qls_funnel_da.by_modality.keys()):
+            sheet_name = f"Disease - {mod}"[:31]
+            labels, _, rates, denoms, nums, cis = _compute.disease_heatmap_grid(
+                bio_qls_funnel_da, modality=mod
+            )
+            if labels:
+                ws = wb.create_sheet(title=sheet_name)
+                _write_grid_sheet(ws, labels, rates, nums, denoms, cis)
+
+    # LOA sheets
+    def _write_table_sheet(title, rows):
+        if rows:
+            ws = wb.create_sheet(title=title[:31])
+            ws.append(list(rows[0].keys()))
+            for row in rows:
+                ws.append(list(row.values()))
+
+    _write_table_sheet("LOA by Disease", export_data.get("loa_by_disease"))
+    _write_table_sheet("LOA by Modality", export_data.get("loa_by_modality"))
+    _write_table_sheet("Oncology vs Non-Oncology", export_data.get("oncology_comparison"))
+
+    # Development Timelines
+    timelines = export_data.get("timelines")
+    if timelines:
+        ws = wb.create_sheet(title="Development Timelines")
+        ws.append(["Disease Area", "P1\u2192P2 (yr)", "P2\u2192P3 (yr)", "P3\u2192Appr (yr)",
+                   "Appr\u2192Mkt (yr)", "Total P1\u2192Appr (yr)"])
+        for name, fs in sorted(timelines.items()):
+            durs = [t.avg_duration_years for t in fs.transitions]
+            clinical_total = sum(d or 0 for d in durs[:3])
+            ws.append([name] + list(durs) + [clinical_total if any(d is not None for d in durs[:3]) else None])
+
+    _write_table_sheet("Time Period LOA", export_data.get("time_period_loa"))
+    _write_table_sheet("Modality Proportion", export_data.get("modality_proportion"))
+    _write_table_sheet("Sponsor Concentration", export_data.get("sponsor_concentration"))
+
+    xlsx_path = os.path.join(output_path, "heatmap_data.xlsx")
+    wb.save(xlsx_path)

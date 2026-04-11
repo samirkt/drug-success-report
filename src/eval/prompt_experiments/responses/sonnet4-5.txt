@@ -1,0 +1,618 @@
+[
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 2 with no progression to Phase 3, suggesting development was discontinued after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 2 with no progression to Phase 3, suggesting development was discontinued after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 2 with no progression to Phase 3, suggesting development was discontinued after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 2 with no progression to Phase 3, suggesting development was discontinued after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 2 with no progression to Phase 3, suggesting development was discontinued after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 2 with no progression to Phase 3, suggesting development was discontinued after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_1",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 1 with no progression to later phases, suggesting development was discontinued after early-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 1"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "UNKNOWN",
+    "confidence": "LOW",
+    "reasoning": "Highest phase is unknown and no other development information is available.",
+    "evidence_sources": ["Highest phase reached: Unknown"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_2",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 2 with no progression to Phase 3, suggesting development was discontinued after mid-stage testing.",
+    "evidence_sources": ["Highest phase reached: Phase 2"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "COMMERCIALIZED",
+    "confidence": "HIGH",
+    "reasoning": "Phase 4 trials are post-marketing studies conducted after regulatory approval and commercialization.",
+    "evidence_sources": ["Highest phase reached: Phase 4"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  },
+  {
+    "outcome": "FAILED_PHASE_3",
+    "confidence": "MEDIUM",
+    "reasoning": "Highest phase reached was Phase 3 with no evidence of approval, suggesting development was discontinued before regulatory submission or approval.",
+    "evidence_sources": ["Highest phase reached: Phase 3"],
+    "approval_date": null,
+    "commercialization_date": null
+  }
+]

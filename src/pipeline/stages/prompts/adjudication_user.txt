@@ -1,0 +1,3 @@
+Adjudicate the following drug-indication candidates:
+
+{{CANDIDATES_BLOCK}}

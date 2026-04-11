@@ -1,0 +1,81 @@
+drug_name,indication,highest_phase,modality,disease_area,outcome,weak_label
+mage-12 peptide vaccine,ovarian sarcoma,Phase 1,peptide,oncology,Failed Phase 1,Clinical
+depsipeptide,peripheral t cell lymphoma (ptcl),Phase 2,peptide,oncology,Failed Phase 2,Clinical
+oxytocin,oxytocin,Unknown,peptide,obstetrics,Unknown,Other
+recombinant human bnp(1-32),obesity,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+oxytocin,alcohol related disorders,Phase 1,peptide,psychiatry,Failed Phase 1,Clinical
+natrecor (nesiritide),cardiomyopathies,Phase 3,peptide,cardiovascular,Approved,Post-Clinical
+vasoactive intestinal peptide (vip) and saline,headache disorders,,peptide,neurology,Unknown,Other
+glucagon 12.5ng/kg/min and 0.9% saline,type 2 diabetes,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+depsipeptide,"carcinoma, non-small-cell lung",Phase 1,peptide,oncology,Failed Phase 1,Clinical
+nesiritide,heart decompensation,Phase 3,peptide,cardiovascular,Approved,Post-Clinical
+teriparatide or human parathyroid hormone (pth) 1-34,male osteoporosis,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+3 pmol/kg*min pancreatic polypeptide,hunger,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+c-type natriuretic peptide (cnp),ischaemia-reperfusion (ir) injury,,peptide,cardiovascular,Unknown,Other
+exenatide,schizophrenia,Phase 3,peptide,neurology,Failed Phase 3,Clinical
+acthar,uveitis,Phase 4,peptide,immunology,Commercialized,Post-Clinical
+montanide isa-51/survivin peptide vaccine,anaplastic oligodendroglioma,Phase 1,peptide,oncology,Failed Phase 1,Clinical
+e7 peptide,ewing's sarcoma,Phase 2,peptide,oncology,Failed Phase 2,Clinical
+gp100 peptide,melanoma,Phase 2,peptide,oncology,Failed Phase 2,Clinical
+cck (kinevac),"diabetes mellitus, type 2",Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+syntocinon,bereavement,,peptide,psychiatry,Failed Phase 1,Clinical
+exenatide,myocardial infarction,Phase 4,peptide,cardiovascular,Commercialized,Post-Clinical
+depsipeptide,esophageal neoplasms,Phase 1,peptide,oncology,Failed Phase 1,Clinical
+vasoactive intestinal polypeptide (vip),neurologic manifestations,,peptide,neurology,Unknown,Other
+"nesiritide,",coronary artery disease,Phase 4,peptide,cardiovascular,Commercialized,Post-Clinical
+human bnp-32,diabetes mellitus,,peptide,metabolic,Unknown,Other
+nesiritide,"heart failure, congestive",Phase 3,peptide,cardiovascular,Approved,Post-Clinical
+depsipeptide,multiple myeloma,Unknown,peptide,oncology,Failed Phase 2,Clinical
+ganirelix - early puberty ganirelix visit,delayed puberty,Unknown,peptide,endocrinology,Unknown,Other
+"peptides (n,r&c) formulated in montanide isa 720","malaria, vivax",Phase 1,peptide,infectious disease,Failed Phase 1,Clinical
+vasoactive intestinal polypeptide (vip),signs and symptoms,,peptide,unknown,Unknown,Other
+pacap38,migraine without aura,,peptide,neurology,Unknown,Other
+high dose npy,mood disorder,Phase 2,peptide,neurology,Failed Phase 2,Clinical
+nesiritide,asymptomatic systolic dysfunction,Unknown,peptide,cardiovascular,Unknown,Other
+teriparatide,postmenopausal osteoporosis,Phase 3,peptide,metabolic,Commercialized,Post-Clinical
+exenatide injection,type2 diabetes mellitus,Phase 1,peptide,metabolic,Failed Phase 1,Clinical
+exenatide,cardiovascular diseases,,peptide,cardiovascular,Unknown,Other
+oxytocin,social behavior,Phase 4,peptide,neurology,Commercialized,Post-Clinical
+nesiritide,congestive heart failure,Phase 4,peptide,cardiovascular,Commercialized,Post-Clinical
+"ksp-qrh-e3-irdye800 (peptide 919288g), 1.8 mg",healthy adults,Phase 1,peptide,imaging,Unknown,Other
+human bnp-32,cardiomyopathy,,peptide,cardiovascular,Unknown,Other
+exenatide,type 2 diabetes mellitus,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+mage-12 peptide vaccine,rectal cancer,Phase 1,peptide,oncology,Failed Phase 1,Clinical
+peptide t,peripheral nervous system disease,,peptide,neurology,Unknown,Other
+intranasal spray with oxytocin,schizoaffective disorder,,peptide,neurology,Failed Phase 1,Clinical
+eptifibatide,non st elevation myocardial infarction,Phase 4,peptide,cardiovascular,Commercialized,Post-Clinical
+natriuretic peptides,migraine,,peptide,neurology,Unknown,Other
+syntocinon®,psychiatric disorders,,peptide,psychiatry,Unknown,Other
+ghrelin,alcoholism,,peptide,addiction,Unknown,Other
+exenatide,"heart failure, diastolic",Phase 4,peptide,cardiovascular,Commercialized,Post-Clinical
+depsipeptide,melanoma,Phase 2,peptide,oncology,Failed Phase 2,Clinical
+oxytocin,healthy male volunteers,Phase 1,peptide,endocrinology,Unknown,Other
+ef-2 peptide,rhabdomyosarcoma,Phase 2,peptide,oncology,Failed Phase 2,Clinical
+daptomycin,gram positive bacteria,Phase 3,peptide,infectious disease,Commercialized,Post-Clinical
+glp1 receptor agonist,type 2 diabetes mellitus,,peptide,metabolic,Unknown,Other
+leuprolide,hypertension,,peptide,cardiovascular,Failed Phase 1,Clinical
+neuropeptide y,type 2 diabetes mellitus,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+gip,type 2 diabetes,Phase 1,peptide,metabolic,Failed Phase 1,Clinical
+terlipressin,ascites,Unknown,peptide,hepatology,Unknown,Other
+nesiritide,heart failure,Phase 3,peptide,cardiovascular,Approved,Post-Clinical
+neuropeptide y,"stress disorders, traumatic, acute",Unknown,peptide,neurology,Unknown,Other
+"romidepsin (depsipeptide, fk228)",cutaneous t-cell lymphoma,Phase 2,peptide,oncology,Approved,Post-Clinical
+calcitonin gene-related peptide,migraine,Phase 4,peptide,neurology,Commercialized,Post-Clinical
+bradykinin,hypertension,Phase 4,peptide,cardiovascular,Commercialized,Post-Clinical
+ac2993 (exenatide),diabetes mellitus,Phase 2,peptide,metabolic,Commercialized,Post-Clinical
+lyspro,diabetes mellitus,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+liraglutide,type 2 diabetes,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+lixisenatide (ave0010),type 2 diabetes mellitus,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+insulin aspart,type 2 diabetes mellitus,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+miacalcin calcitonin salmon nasal spray,pelvic ring fractures,Phase 4,peptide,orthopedic,Commercialized,Post-Clinical
+glucagon,"diabetes mellitus, type 1",Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+lispro,type 2 diabetes,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+exenatide 2 mg,polycystic ovary syndrome,Phase 4,peptide,endocrine,Commercialized,Post-Clinical
+colistin,colistin,Phase 4,peptide,infectious disease,Commercialized,Post-Clinical
+10 pmol/kg*min pancreatic polypeptide,hunger,Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+albiglutide 50 mg,"diabetes mellitus, type 2",Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+dulaglutide,"diabetes mellitus, type 2",Phase 4,peptide,metabolic,Commercialized,Post-Clinical
+liraglutide,diabetes,Phase 3,peptide,metabolic,Commercialized,Post-Clinical
+substance p,hypertension,Phase 4,peptide,cardiovascular,Commercialized,Post-Clinical
+liraglutide,"diabetes mellitus, type 2",Phase 3,peptide,metabolic,Commercialized,Post-Clinical
+liraglutide,obesity,Phase 3,peptide,metabolic,Approved,Post-Clinical

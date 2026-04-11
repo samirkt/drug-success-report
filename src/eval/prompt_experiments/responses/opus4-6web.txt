@@ -1,0 +1,642 @@
+[
+{
+"outcome": "FAILED_PHASE_1",
+"confidence": "MEDIUM",
+"reasoning": "MAGE-12 peptide vaccine is an experimental cancer vaccine that only reached Phase 1 for ovarian sarcoma, a rare indication. No evidence of progression beyond Phase 1.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: ovarian sarcoma"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "APPROVED",
+"confidence": "HIGH",
+"reasoning": "Depsipeptide (romidepsin) was FDA-approved for PTCL in 2011. Although this record shows Phase 2 as highest, the drug received accelerated approval for this indication.",
+"evidence_sources": ["Drug name: depsipeptide", "Indication: peripheral t cell lymphoma (ptcl)", "Highest phase reached: Phase 2"],
+"approval_date": "2011-06-15",
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "HIGH",
+"reasoning": "The indication field is 'oxytocin' which is not a valid disease indication — this appears to be a data entry error or pharmacokinetic study with no classifiable therapeutic outcome.",
+"evidence_sources": ["Indication: oxytocin", "Highest phase reached: Unknown"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Recombinant human BNP(1-32) is an investigational peptide. Phase 4 designation for obesity is likely a physiological study using the endogenous peptide rather than a true drug development program.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: recombinant human bnp(1-32)", "Indication: obesity"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "ONGOING",
+"confidence": "LOW",
+"reasoning": "Oxytocin for alcohol-related disorders is an investigational use that has been explored in early-phase trials. Only Phase 1 reached with no evidence of approval or clear failure signal.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: alcohol related disorders"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Nesiritide (Natrecor) was FDA-approved and commercialized for acute decompensated heart failure, which encompasses cardiomyopathies. Phase 3 data here is consistent with its approval pathway; it was marketed by Scios/J&J.",
+"evidence_sources": ["Drug name: natrecor (nesiritide)", "Highest phase reached: Phase 3", "Indication: cardiomyopathies"],
+"approval_date": "2001-08-10",
+"commercialization_date": "2001-09-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "VIP with saline for headache disorders appears to be a mechanistic/provocation study rather than a therapeutic development program. No phase data or development outcome available.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: headache disorders"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Glucagon at a specific infusion rate with saline for type 2 diabetes is a physiological study, not a drug development program. Phase 4 likely reflects use of approved glucagon in a research context.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: glucagon 12.5ng/kg/min and 0.9% saline"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_1",
+"confidence": "MEDIUM",
+"reasoning": "Depsipeptide (romidepsin) was tested in Phase 1 for NSCLC but never advanced further for this indication. It was only approved for T-cell lymphomas.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: carcinoma, non-small-cell lung"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Nesiritide was FDA-approved and marketed as Natrecor for acute decompensated heart failure (heart decompensation). Phase 3 is consistent with the pivotal trial phase before approval.",
+"evidence_sources": ["Drug name: nesiritide", "Highest phase reached: Phase 3", "Indication: heart decompensation"],
+"approval_date": "2001-08-10",
+"commercialization_date": "2001-09-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Teriparatide (Forteo) was FDA-approved for osteoporosis including in men. Phase 4 indicates post-marketing studies, confirming commercialization.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: teriparatide or human parathyroid hormone (pth) 1-34", "Indication: male osteoporosis"],
+"approval_date": "2002-11-26",
+"commercialization_date": "2003-01-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Pancreatic polypeptide at a specific infusion dose for hunger is a physiological/mechanistic study, not a drug development program. Phase 4 tag likely reflects use of an investigational agent in a research protocol.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: hunger"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "C-type natriuretic peptide for ischaemia-reperfusion injury is an early investigational concept with no phase data. Insufficient information to determine outcome.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: ischaemia-reperfusion (ir) injury"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_3",
+"confidence": "MEDIUM",
+"reasoning": "Exenatide for schizophrenia reached Phase 3 but has not been approved for this psychiatric indication. This represents an off-label investigational use of an approved diabetes drug that did not succeed.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Indication: schizophrenia"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "MEDIUM",
+"reasoning": "Acthar (repository corticotropin injection) has FDA approval for various inflammatory conditions and has been used for uveitis. Phase 4 indicates post-marketing studies consistent with commercialization.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: acthar", "Indication: uveitis"],
+"approval_date": "1952-01-01",
+"commercialization_date": "1952-01-01"
+},
+{
+"outcome": "FAILED_PHASE_1",
+"confidence": "MEDIUM",
+"reasoning": "Survivin peptide vaccine for anaplastic oligodendroglioma is a niche experimental cancer vaccine that only reached Phase 1 with no evidence of further advancement.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: anaplastic oligodendroglioma"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_2",
+"confidence": "MEDIUM",
+"reasoning": "E7 peptide vaccine for Ewing's sarcoma reached Phase 2 but there is no evidence of progression to Phase 3 or approval for this rare pediatric cancer.",
+"evidence_sources": ["Highest phase reached: Phase 2", "Indication: ewing's sarcoma"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_2",
+"confidence": "MEDIUM",
+"reasoning": "gp100 peptide vaccine for melanoma was extensively studied but as a standalone therapy did not advance beyond Phase 2. It was used as a comparator in the ipilimumab pivotal trial but was not itself approved.",
+"evidence_sources": ["Highest phase reached: Phase 2", "Indication: melanoma"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "CCK (Kinevac) is FDA-approved as a diagnostic agent for gallbladder function, not for type 2 diabetes. Phase 4 here likely reflects a mechanistic study using the approved diagnostic agent in a research context.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: diabetes mellitus, type 2"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Syntocinon (oxytocin) for bereavement is an investigational psychiatric use with no phase data recorded. This appears to be an exploratory study rather than a drug development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: bereavement"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Exenatide for myocardial infarction is an investigational off-label use of an approved diabetes drug. Phase 4 likely reflects a post-marketing study exploring cardioprotective effects, not a new approval pathway.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: myocardial infarction"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_1",
+"confidence": "MEDIUM",
+"reasoning": "Depsipeptide (romidepsin) was tested in Phase 1 for esophageal neoplasms but never advanced for this indication. Approval was limited to T-cell lymphomas.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: esophageal neoplasms"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "VIP for neurologic manifestations has no phase data and appears to be a basic research or mechanistic study rather than a therapeutic development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: neurologic manifestations"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Nesiritide was FDA-approved and commercialized as Natrecor. Phase 4 for coronary artery disease likely reflects post-marketing research, and nesiritide was commercially available.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: nesiritide,", "Indication: coronary artery disease"],
+"approval_date": "2001-08-10",
+"commercialization_date": "2001-09-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Human BNP-32 for diabetes mellitus has no phase data. This is likely a physiological study of the endogenous peptide rather than a drug development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: diabetes mellitus"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Nesiritide was FDA-approved for acute decompensated heart failure (congestive heart failure). Phase 3 is consistent with the pivotal trial phase. It was marketed as Natrecor.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Indication: heart failure, congestive"],
+"approval_date": "2001-08-10",
+"commercialization_date": "2001-09-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Depsipeptide for multiple myeloma has no phase data. While romidepsin was explored in hematologic malignancies, there is insufficient data here to classify the outcome.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: multiple myeloma"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Ganirelix for delayed puberty has no phase data and an inconsistent drug name suggesting a diagnostic or investigational protocol rather than a standard development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: delayed puberty"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_1",
+"confidence": "MEDIUM",
+"reasoning": "Peptide malaria vaccine formulated in Montanide ISA 720 for vivax malaria reached only Phase 1. Experimental malaria vaccines in this class have generally not advanced beyond early phases.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: malaria, vivax"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "VIP for 'signs and symptoms' is a non-specific indication with no phase data, indicating a mechanistic or exploratory study rather than a drug development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: signs and symptoms"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "PACAP38 for migraine without aura has no phase data. This is likely a provocation study to understand migraine pathophysiology rather than a therapeutic development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: migraine without aura"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_2",
+"confidence": "LOW",
+"reasoning": "High dose neuropeptide Y for mood disorder reached Phase 2 but there is no evidence of further advancement. NPY remains investigational for psychiatric indications.",
+"evidence_sources": ["Highest phase reached: Phase 2", "Indication: mood disorder"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Nesiritide for asymptomatic systolic dysfunction has no phase data. While nesiritide is approved for acute heart failure, this specific indication lacks sufficient development data.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: asymptomatic systolic dysfunction"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Teriparatide (Forteo) was FDA-approved for postmenopausal osteoporosis in 2002 and has been commercially available since. Phase 3 is consistent with pivotal trial data.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Drug name: teriparatide", "Indication: postmenopausal osteoporosis"],
+"approval_date": "2002-11-26",
+"commercialization_date": "2003-01-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Exenatide injection (Byetta/Bydureon) was FDA-approved for type 2 diabetes mellitus. Phase 1 here likely represents an early formulation study; the drug is commercially available.",
+"evidence_sources": ["Drug name: exenatide injection", "Indication: type2 diabetes mellitus", "Highest phase reached: Phase 1"],
+"approval_date": "2005-04-28",
+"commercialization_date": "2005-06-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Exenatide for cardiovascular diseases broadly has no phase data. While cardiovascular outcome trials exist, this generic indication is too vague to classify a specific development outcome.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: cardiovascular diseases"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Oxytocin for 'social behavior' is not a therapeutic indication but a research domain. Phase 4 likely reflects behavioral research using approved oxytocin, not a new drug development program.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: social behavior"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Nesiritide (Natrecor) was FDA-approved and commercially marketed for congestive heart failure. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: nesiritide", "Indication: congestive heart failure"],
+"approval_date": "2001-08-10",
+"commercialization_date": "2001-09-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "This appears to be a Phase 1 dose-finding study of an imaging peptide in healthy volunteers, not a therapeutic drug development program with a classifiable disease outcome.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: healthy adults"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Human BNP-32 for cardiomyopathy has no phase data. This is likely a physiological study of the endogenous peptide rather than a formal drug development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: cardiomyopathy"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Exenatide (Byetta/Bydureon) was FDA-approved and commercialized for type 2 diabetes mellitus. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: exenatide", "Indication: type 2 diabetes mellitus"],
+"approval_date": "2005-04-28",
+"commercialization_date": "2005-06-01"
+},
+{
+"outcome": "FAILED_PHASE_1",
+"confidence": "MEDIUM",
+"reasoning": "MAGE-12 peptide vaccine for rectal cancer only reached Phase 1 with no evidence of progression. Experimental cancer peptide vaccines for this indication have not advanced.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: rectal cancer"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Peptide T for peripheral nervous system disease has no phase data. Peptide T was investigated primarily for HIV-related conditions and did not achieve approval for any indication.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: peripheral nervous system disease"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Intranasal oxytocin for schizoaffective disorder has no phase data. This is an investigational psychiatric use that lacks sufficient metadata for outcome classification.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: schizoaffective disorder"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Eptifibatide (Integrilin) was FDA-approved for acute coronary syndromes including NSTEMI. Phase 4 confirms post-marketing studies consistent with commercialization.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: eptifibatide", "Indication: non st elevation myocardial infarction"],
+"approval_date": "1998-05-18",
+"commercialization_date": "1998-06-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Natriuretic peptides for migraine has no phase data. This likely represents a provocation or mechanistic study rather than a therapeutic development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: migraine"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Syntocinon (oxytocin) for psychiatric disorders broadly has no phase data. This represents exploratory research into oxytocin's psychiatric effects rather than a defined development program.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: psychiatric disorders"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Ghrelin for alcoholism has no phase data. This is an early investigational concept exploring ghrelin's role in alcohol craving with insufficient data to determine outcome.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: alcoholism"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Exenatide for diastolic heart failure is an off-label investigational use. Phase 4 likely reflects a post-marketing study exploring cardiac effects of the approved diabetes drug, not a new indication approval.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: heart failure, diastolic"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_2",
+"confidence": "MEDIUM",
+"reasoning": "Depsipeptide (romidepsin) was tested in Phase 2 for melanoma but did not advance for this indication. Approval was limited to T-cell lymphomas.",
+"evidence_sources": ["Highest phase reached: Phase 2", "Indication: melanoma"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Oxytocin administered to healthy male volunteers in Phase 1 is a pharmacological study, not a therapeutic development program with a disease indication.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: healthy male volunteers"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "FAILED_PHASE_2",
+"confidence": "MEDIUM",
+"reasoning": "EF-2 peptide for rhabdomyosarcoma reached Phase 2 but there is no evidence of further advancement. This experimental cancer peptide vaccine did not progress.",
+"evidence_sources": ["Highest phase reached: Phase 2", "Indication: rhabdomyosarcoma"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Daptomycin (Cubicin) was FDA-approved for gram-positive bacterial infections including complicated skin infections and S. aureus bacteremia. Phase 3 is consistent with pivotal trials.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Drug name: daptomycin", "Indication: gram positive bacteria"],
+"approval_date": "2003-09-12",
+"commercialization_date": "2003-11-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "GLP-1 receptor agonist is a drug class, not a specific drug. No phase data is provided. Cannot classify a development outcome for a generic class designation.",
+"evidence_sources": ["Highest phase reached: Unknown", "Drug name: glp1 receptor agonist"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Leuprolide for hypertension has no phase data. While leuprolide is approved for other indications (prostate cancer, endometriosis), this appears to be an exploratory mechanistic study.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: hypertension"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Neuropeptide Y for type 2 diabetes is an endogenous peptide used in a physiological study. Phase 4 likely reflects a research protocol, not a drug development program for NPY as a therapeutic.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: type 2 diabetes mellitus"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "ONGOING",
+"confidence": "LOW",
+"reasoning": "GIP (glucose-dependent insulinotropic polypeptide) for type 2 diabetes is in early investigation at Phase 1. While GIP-based therapies are active research areas, this specific program status is uncertain.",
+"evidence_sources": ["Highest phase reached: Phase 1", "Indication: type 2 diabetes"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Terlipressin for ascites has no phase data. While terlipressin has been approved in some markets for variceal bleeding and hepatorenal syndrome, the specific ascites indication lacks classifiable data.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: ascites"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Nesiritide (Natrecor) was FDA-approved and commercialized for acute decompensated heart failure. Phase 3 is consistent with pivotal trials before approval.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Drug name: nesiritide", "Indication: heart failure"],
+"approval_date": "2001-08-10",
+"commercialization_date": "2001-09-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "LOW",
+"reasoning": "Neuropeptide Y for acute traumatic stress disorders has no phase data. NPY remains an investigational agent for stress-related conditions with insufficient data for classification.",
+"evidence_sources": ["Highest phase reached: Unknown", "Indication: stress disorders, traumatic, acute"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "APPROVED",
+"confidence": "HIGH",
+"reasoning": "Romidepsin (depsipeptide/FK228) was FDA-approved for cutaneous T-cell lymphoma in 2009 via accelerated approval based on Phase 2 data.",
+"evidence_sources": ["Drug name: romidepsin (depsipeptide, fk228)", "Highest phase reached: Phase 2", "Indication: cutaneous t-cell lymphoma"],
+"approval_date": "2009-11-05",
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "CGRP for migraine at Phase 4 is ambiguous. CGRP itself is used as a provocation agent in migraine research; anti-CGRP antibodies are approved, but CGRP the peptide is not a therapeutic for migraine.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: calcitonin gene-related peptide", "Indication: migraine"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Bradykinin for hypertension at Phase 4 is likely a physiological study examining bradykinin's role in blood pressure regulation, not a drug development program.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: hypertension"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "MEDIUM",
+"reasoning": "AC2993 is the development code for exenatide (Byetta), which was FDA-approved and commercialized for diabetes. Phase 2 here reflects an earlier stage of the development program.",
+"evidence_sources": ["Drug name: ac2993 (exenatide)", "Highest phase reached: Phase 2", "Indication: diabetes mellitus"],
+"approval_date": "2005-04-28",
+"commercialization_date": "2005-06-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Insulin lispro (Humalog) was FDA-approved and widely commercialized for diabetes mellitus. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: lyspro", "Indication: diabetes mellitus"],
+"approval_date": "1996-06-14",
+"commercialization_date": "1996-08-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Liraglutide (Victoza) was FDA-approved and commercialized for type 2 diabetes. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: liraglutide", "Indication: type 2 diabetes"],
+"approval_date": "2010-01-25",
+"commercialization_date": "2010-02-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Lixisenatide (Adlyxin) was FDA-approved and commercialized for type 2 diabetes mellitus. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: lixisenatide (ave0010)", "Indication: type 2 diabetes mellitus"],
+"approval_date": "2016-07-28",
+"commercialization_date": "2017-01-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Insulin aspart (NovoLog/NovoRapid) was FDA-approved and widely commercialized for type 2 diabetes mellitus. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: insulin aspart", "Indication: type 2 diabetes mellitus"],
+"approval_date": "2000-06-07",
+"commercialization_date": "2001-01-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Miacalcin (calcitonin salmon nasal spray) was FDA-approved and commercialized for osteoporosis. Phase 4 for pelvic ring fractures represents post-marketing research for a commercially available product.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: miacalcin calcitonin salmon nasal spray", "Indication: pelvic ring fractures"],
+"approval_date": "1995-08-17",
+"commercialization_date": "1995-09-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Glucagon is FDA-approved for severe hypoglycemia in type 1 diabetes and has been commercially available for decades. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: glucagon", "Indication: diabetes mellitus, type 1"],
+"approval_date": "1960-01-01",
+"commercialization_date": "1960-01-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Insulin lispro (Humalog) was FDA-approved and commercialized for type 2 diabetes. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: lispro", "Indication: type 2 diabetes"],
+"approval_date": "1996-06-14",
+"commercialization_date": "1996-08-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Exenatide for polycystic ovary syndrome is an off-label investigational use of an approved diabetes drug. Phase 4 reflects post-marketing research, but exenatide is not approved for PCOS.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: polycystic ovary syndrome"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "HIGH",
+"reasoning": "The indication field is 'colistin' which is not a valid disease indication — this is a data entry error. No classifiable therapeutic outcome.",
+"evidence_sources": ["Indication: colistin", "Highest phase reached: Phase 4"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Pancreatic polypeptide at a specific infusion dose for hunger is a physiological/mechanistic study, not a drug development program.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: hunger"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Albiglutide (Tanzeum/Eperzan) was FDA-approved for type 2 diabetes in 2014, though it was later voluntarily withdrawn from the market in 2018 for commercial reasons. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: albiglutide 50 mg", "Indication: diabetes mellitus, type 2"],
+"approval_date": "2014-04-15",
+"commercialization_date": "2014-07-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Dulaglutide (Trulicity) was FDA-approved and commercially successful for type 2 diabetes mellitus. Phase 4 confirms post-marketing studies.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Drug name: dulaglutide", "Indication: diabetes mellitus, type 2"],
+"approval_date": "2014-09-18",
+"commercialization_date": "2014-11-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Liraglutide (Victoza) was FDA-approved for diabetes broadly. Phase 3 is consistent with the pivotal trial stage before approval and subsequent commercialization.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Drug name: liraglutide", "Indication: diabetes"],
+"approval_date": "2010-01-25",
+"commercialization_date": "2010-02-01"
+},
+{
+"outcome": "UNKNOWN",
+"confidence": "MEDIUM",
+"reasoning": "Substance P for hypertension at Phase 4 is a physiological study examining substance P's role in blood pressure regulation, not a drug development program for substance P as a therapeutic.",
+"evidence_sources": ["Highest phase reached: Phase 4", "Indication: hypertension"],
+"approval_date": null,
+"commercialization_date": null
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Liraglutide (Victoza) was FDA-approved and commercialized for type 2 diabetes mellitus. Phase 3 reflects pivotal development.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Drug name: liraglutide", "Indication: diabetes mellitus, type 2"],
+"approval_date": "2010-01-25",
+"commercialization_date": "2010-02-01"
+},
+{
+"outcome": "COMMERCIALIZED",
+"confidence": "HIGH",
+"reasoning": "Liraglutide was FDA-approved as Saxenda for chronic weight management/obesity in 2014. Phase 3 reflects the pivotal SCALE trial program.",
+"evidence_sources": ["Highest phase reached: Phase 3", "Drug name: liraglutide", "Indication: obesity"],
+"approval_date": "2014-12-23",
+"commercialization_date": "2015-02-01"
+}
+]
