@@ -67,7 +67,7 @@ _STATUS_MAP: dict[str, TrialStatus] = {
     "WITHDRAWN":               TrialStatus.WITHDRAWN,
     "ACTIVE, NOT RECRUITING":  TrialStatus.ACTIVE_NOT_RECRUITING,
     "ACTIVE_NOT_RECRUITING":   TrialStatus.ACTIVE_NOT_RECRUITING,  # REST API style
-    "SUSPENDED":               TrialStatus.ACTIVE_NOT_RECRUITING,
+    "SUSPENDED":               TrialStatus.SUSPENDED,
 }
 
 # Hardcoded row-level exclusion rules applied during ingestion.

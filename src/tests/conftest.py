@@ -228,6 +228,8 @@ def sample_joined_records():
             "outcome": "Approved",
             "approval_date": date(2022, 4, 15),
             "commercialization_date": None,
+            "phases_observed": {"Phase 1", "Phase 2", "Approval"},
+            "phases_advanced": {"Phase 1", "Phase 2", "Approval"},
         },
         {
             "candidate_id": "cand_002",
@@ -239,6 +241,8 @@ def sample_joined_records():
             "outcome": "Failed Phase 1",
             "approval_date": None,
             "commercialization_date": None,
+            "phases_observed": {"Phase 1"},
+            "phases_advanced": {"Phase 1"},
         },
         {
             "candidate_id": "cand_003",
@@ -250,6 +254,8 @@ def sample_joined_records():
             "outcome": "Ongoing",
             "approval_date": None,
             "commercialization_date": None,
+            "phases_observed": set(),
+            "phases_advanced": set(),
         },
     ]
 

@@ -466,7 +466,7 @@ class TestParseStatus:
         ("Withdrawn",               TrialStatus.WITHDRAWN),
         ("Active, not recruiting",  TrialStatus.ACTIVE_NOT_RECRUITING),
         ("ACTIVE_NOT_RECRUITING",   TrialStatus.ACTIVE_NOT_RECRUITING),
-        ("Suspended",               TrialStatus.ACTIVE_NOT_RECRUITING),
+        ("Suspended",               TrialStatus.SUSPENDED),
     ])
     def test_parse_status_known_values(self, status_str, expected):
         stage = TrialIngestionStage()

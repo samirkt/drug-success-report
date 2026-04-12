@@ -1,8 +1,26 @@
 """
 Stage 4: Funnel Aggregation
 
-Computes phase-transition success rates across the candidate population,
-stratified by drug modality and disease area.
+Computes phase-transition success rates using a forward-looking cohort
+methodology aligned with BIO/QLS. Two sets of phase observations are tracked
+per candidate:
+
+  * `phases_observed` — the cohort-membership set. A phase is included only
+    when there is terminal-status evidence at that phase: a COMPLETED /
+    TERMINATED / WITHDRAWN / SUSPENDED trial, a FAILED_PHASE_N adjudicator
+    verdict, or an approval / commercialization event. This drives the
+    denominator of each transition rate.
+
+  * `phases_advanced` — the advancement-evidence set. A phase is included
+    when there is any trial at that phase (regardless of status), plus every
+    element of `phases_observed`. A started-but-not-yet-terminal Phase 2
+    trial is sufficient evidence of P1→P2 advancement. This drives the
+    numerator of each transition rate.
+
+A candidate counts as a success for transition N→N+1 iff `from_phase` is in
+`phases_observed` AND `phases_advanced` contains any strictly later cohort.
+Approval is not back-filled to earlier clinical phases when trials there
+were not observed.
 
 Transitions computed:
   Phase 1 → Phase 2
@@ -20,6 +38,7 @@ from ..models import (
     FunnelSlice,
     OutcomeTable,
     TransitionRate,
+    TrialStatus,
     TrialTable,
 )
 
@@ -39,12 +58,22 @@ _PHASE_ORDER: dict[str, int] = {
     "Market": 4,
 }
 
+# Trial statuses that count as terminal observation of a phase. A phase is
+# considered "observed" for cohort purposes only if at least one of the
+# candidate's trials at that phase has reached one of these statuses.
+_TERMINAL_TRIAL_STATUSES: frozenset[TrialStatus] = frozenset({
+    TrialStatus.COMPLETED,
+    TrialStatus.TERMINATED,
+    TrialStatus.WITHDRAWN,
+    TrialStatus.SUSPENDED,
+})
+
 
 class FunnelAggregationStage:
     """
     Aggregates candidate outcomes into phase-funnel success rates.
 
-    Inputs:  CandidateTable, AttributeTable, OutcomeTable
+    Inputs:  CandidateTable, AttributeTable, OutcomeTable, TrialTable
     Outputs: FunnelResults
     """
 
@@ -56,7 +85,7 @@ class FunnelAggregationStage:
         trial_table: TrialTable | None = None,
     ) -> FunnelResults:
         """Compute overall and stratified funnel statistics."""
-        records = self._join(candidate_table, attribute_table, outcome_table)
+        records = self._join(candidate_table, attribute_table, outcome_table, trial_table)
 
         overall = self._compute_slice(records, modality=None, disease_area=None, trial_table=trial_table)
 
@@ -87,7 +116,7 @@ class FunnelAggregationStage:
         )
 
     # ------------------------------------------------------------------
-    # Internal helpers  (implementation goes here)
+    # Internal helpers
     # ------------------------------------------------------------------
 
     def _join(
@@ -95,16 +124,34 @@ class FunnelAggregationStage:
         candidate_table: CandidateTable,
         attribute_table: AttributeTable,
         outcome_table: OutcomeTable,
+        trial_table: TrialTable | None = None,
     ) -> list[dict]:
         """
-        Merge candidates, attributes, and outcomes into a flat list of dicts
-        with keys: candidate_id, drug, indication, modality, disease_area,
-                   highest_phase, outcome.
+        Merge candidates, attributes, outcomes, and trial-level phase
+        observations into a flat list of dicts.
+
+        Adds a `phases_observed: set[str]` key whose members are drawn from
+        {"Phase 1","Phase 2","Phase 3","Approval","Market"} — the cohorts this
+        candidate belongs to under strict forward-looking semantics.
         """
+        trial_index = self._build_trial_index(trial_table)
+
         records = []
         for c in candidate_table.candidates:
             attrs = attribute_table.attributes.get(c.candidate_id)
             out   = outcome_table.outcomes.get(c.candidate_id)
+            outcome_value = out.outcome.value if out else None
+            approval_date = out.approval_date if out else None
+            commercialization_date = out.commercialization_date if out else None
+
+            phases_observed, phases_advanced = self._phases_observed(
+                trial_ids=c.trial_ids,
+                trial_index=trial_index,
+                outcome=outcome_value,
+                approval_date=approval_date,
+                commercialization_date=commercialization_date,
+            )
+
             records.append({
                 "candidate_id": c.candidate_id,
                 "drug":         c.drug_name,
@@ -112,12 +159,84 @@ class FunnelAggregationStage:
                 "modality":     attrs.drug_modality if attrs else None,
                 "disease_area": attrs.disease_area  if attrs else None,
                 "highest_phase": c.highest_phase.value,
-                "outcome":      out.outcome.value if out else None,
-                "approval_date": out.approval_date if out else None,
-                "commercialization_date": out.commercialization_date if out else None,
+                "outcome":      outcome_value,
+                "approval_date": approval_date,
+                "commercialization_date": commercialization_date,
                 "trial_ids":    c.trial_ids,
+                "phases_observed": phases_observed,
+                "phases_advanced": phases_advanced,
             })
         return records
+
+    @staticmethod
+    def _build_trial_index(trial_table: TrialTable | None) -> dict[str, tuple[str, TrialStatus]]:
+        """Map nct_id → (phase_value, status) for quick per-candidate lookup."""
+        if trial_table is None:
+            return {}
+        return {
+            t.nct_id: (t.phase.value, t.status)
+            for t in trial_table.trials
+        }
+
+    @staticmethod
+    def _phases_observed(
+        trial_ids: list[str],
+        trial_index: dict[str, tuple[str, TrialStatus]],
+        outcome: str | None,
+        approval_date,
+        commercialization_date,
+    ) -> tuple[set[str], set[str]]:
+        """Return (cohort_phases, advancement_phases) for a candidate.
+
+        * cohort_phases require terminal evidence (trial terminal status,
+          adjudicator FAILED_PHASE_N, or approval/commercialization event).
+        * advancement_phases include cohort_phases plus any phase where a
+          trial of any status exists — a started-but-not-terminal late-phase
+          trial is enough to show the candidate advanced past earlier phases.
+        """
+        cohort: set[str] = set()
+        advancement: set[str] = set()
+
+        for nct in trial_ids:
+            entry = trial_index.get(nct)
+            if entry is None:
+                continue
+            phase_value, status = entry
+            if phase_value in _PHASE_ORDER:
+                advancement.add(phase_value)
+                if status in _TERMINAL_TRIAL_STATUSES:
+                    cohort.add(phase_value)
+            elif phase_value == "Phase 4":
+                # Post-marketing trials imply approval was reached.
+                advancement.add("Approval")
+                if status in _TERMINAL_TRIAL_STATUSES:
+                    cohort.add("Approval")
+
+        # FAILED_PHASE_N outcomes credit advancement only — a drug with a
+        # terminal Phase 1 trial and a FAILED_PHASE_2 verdict is correctly
+        # counted as a P1→P2 success. We deliberately do NOT add Phase N to
+        # the cohort set from an outcome alone: LLM FAILED_PHASE_N verdicts
+        # without terminal trial evidence at Phase N (e.g. active late-phase
+        # trials) would otherwise pad the Phase N denominator with
+        # uncorroborated failures and deflate the downstream rate.
+        _failed_phase_map = {
+            "Failed Phase 1": "Phase 1",
+            "Failed Phase 2": "Phase 2",
+            "Failed Phase 3": "Phase 3",
+        }
+        failed_phase = _failed_phase_map.get(outcome or "")
+        if failed_phase is not None:
+            advancement.add(failed_phase)
+
+        # Approval / Market outcomes — terminal events by definition.
+        if outcome in ("Approved", "Commercialized") or approval_date is not None:
+            cohort.add("Approval")
+            advancement.add("Approval")
+        if outcome == "Commercialized" or commercialization_date is not None:
+            cohort.add("Market")
+            advancement.add("Market")
+
+        return cohort, advancement
 
     def _compute_slice(
         self,
@@ -158,23 +277,19 @@ class FunnelAggregationStage:
         phase_avg_duration: dict[str, float] | None = None,
     ) -> TransitionRate:
         """
-        Compute the success rate for a single phase transition
-        from `records` that reached at least `from_phase`.
+        Forward-looking cohort rate. A candidate enters the denominator if
+        `from_phase` appears in its `phases_observed`. It enters the numerator
+        if any strictly-later cohort also appears in `phases_observed`.
         """
-        def effective_level(record: dict) -> int:
-            level = _PHASE_ORDER.get(record["highest_phase"], -1)
-            outcome = record.get("outcome")
-            if outcome == "Approved":
-                level = max(level, 3)
-            elif outcome == "Commercialized":
-                level = max(level, 4)
-            return level
-
-        resolved = [r for r in records if r.get("outcome") not in ("Ongoing", "Unknown")]
         from_level = _PHASE_ORDER[from_phase]
-        to_level   = _PHASE_ORDER[to_phase]
-        denominator = sum(1 for r in resolved if effective_level(r) >= from_level)
-        numerator   = sum(1 for r in resolved if effective_level(r) >= to_level)
+        later_phases = {p for p, lvl in _PHASE_ORDER.items() if lvl > from_level}
+
+        from_cohort = [r for r in records if from_phase in r.get("phases_observed", set())]
+        denominator = len(from_cohort)
+        numerator = sum(
+            1 for r in from_cohort
+            if r.get("phases_advanced", r.get("phases_observed", set())) & later_phases
+        )
         rate = numerator / denominator if denominator > 0 else 0.0
 
         if from_phase == "Approval":

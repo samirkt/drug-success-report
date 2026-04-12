@@ -29,6 +29,7 @@ class TrialStatus(str, Enum):
     TERMINATED = "Terminated"
     WITHDRAWN = "Withdrawn"
     ACTIVE_NOT_RECRUITING = "Active, not recruiting"
+    SUSPENDED = "Suspended"
     UNKNOWN = "Unknown"
 
 

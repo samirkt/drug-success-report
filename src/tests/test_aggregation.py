@@ -14,12 +14,18 @@ import pytest
 
 from pipeline.models import (
     AttributeTable,
+    Candidate,
+    CandidateOutcome,
+    CandidateOutcomeRecord,
     CandidateTable,
     FunnelResults,
     FunnelSlice,
     OutcomeTable,
+    RawTrial,
     TransitionRate,
     TrialPhase,
+    TrialStatus,
+    TrialTable,
 )
 from pipeline.stages.aggregation import FunnelAggregationStage, TRANSITIONS
 
@@ -80,7 +86,7 @@ class TestFunnelAggregationStageRunOrchestration:
         stage = self._make_stage_with_mocks([], sample_funnel_slice)
         stage.run(sample_candidate_table, sample_attribute_table, sample_outcome_table)
         stage._join.assert_called_once_with(
-            sample_candidate_table, sample_attribute_table, sample_outcome_table
+            sample_candidate_table, sample_attribute_table, sample_outcome_table, None
         )
 
     def test_run_computes_overall_slice_with_none_filters(
@@ -260,6 +266,24 @@ class TestComputeSlice:
 # ---------------------------------------------------------------------------
 
 class TestTransitionRate:
+    """Forward-looking cohort semantics.
+
+    A candidate is in the denominator for N→N+1 iff `from_phase` ∈ phases_observed.
+    It is in the numerator iff any phase strictly later than N is also observed.
+    """
+
+    @staticmethod
+    def _record(cid, phases, modality="peptide", disease_area="metabolic",
+                outcome="Failed Phase 1", highest_phase="Phase 1",
+                approval_date=None, commercialization_date=None):
+        return {
+            "candidate_id": cid, "drug": cid, "indication": "X",
+            "modality": modality, "disease_area": disease_area,
+            "highest_phase": highest_phase, "outcome": outcome,
+            "approval_date": approval_date, "commercialization_date": commercialization_date,
+            "phases_observed": set(phases),
+        }
+
     def test_transition_rate_returns_transition_rate_object(self, sample_joined_records):
         stage = FunnelAggregationStage()
         result = stage._transition_rate(sample_joined_records, "Phase 1", "Phase 2")
@@ -290,43 +314,34 @@ class TestTransitionRate:
         result = stage._transition_rate(sample_joined_records, "Phase 1", "Phase 2")
         assert result.denominator >= 0
 
-    def test_transition_rate_zero_denominator_gives_zero_rate(self):
-        """When no candidates reached the from_phase, rate should be 0.0."""
+    def test_transition_rate_zero_denominator_when_no_cohort_members(self):
+        """No candidate observed at from_phase → denominator 0, rate 0.0."""
+        records = [self._record("c1", phases={"Phase 1"})]
         stage = FunnelAggregationStage()
-        # All records are Phase 1 only — none reached Phase 3
-        records = [
-            {"candidate_id": "c1", "drug": "A", "indication": "X",
-             "modality": "peptide", "disease_area": "metabolic",
-             "highest_phase": "Phase 1", "outcome": "Ongoing"},
-        ]
         result = stage._transition_rate(records, "Phase 3", "Approval")
         assert result.denominator == 0
         assert result.rate == 0.0
 
     def test_transition_rate_full_progression_gives_rate_one(self):
-        """Candidates that all progressed should give rate = 1.0."""
+        """Every P1-cohort member has a later observation → rate 1.0."""
         records = [
-            {"candidate_id": "c1", "drug": "A", "indication": "X",
-             "modality": "peptide", "disease_area": "metabolic",
-             "highest_phase": "Phase 2", "outcome": "Failed Phase 2"},
-            {"candidate_id": "c2", "drug": "B", "indication": "Y",
-             "modality": "peptide", "disease_area": "metabolic",
-             "highest_phase": "Phase 2", "outcome": "Failed Phase 2"},
+            self._record("c1", phases={"Phase 1", "Phase 2"}),
+            self._record("c2", phases={"Phase 1", "Phase 2"}),
         ]
         stage = FunnelAggregationStage()
         result = stage._transition_rate(records, "Phase 1", "Phase 2")
+        assert result.denominator == 2
+        assert result.numerator == 2
         assert result.rate == pytest.approx(1.0)
 
     def test_transition_rate_partial_progression(self):
-        """3 of 5 resolved candidates progressed from Phase 1 → Phase 2 = 0.6."""
+        """3 of 5 P1-cohort members also observed at a later phase → 0.6."""
         records = [
-            {"candidate_id": f"c{i}", "drug": "A", "indication": "X",
-             "modality": "peptide", "disease_area": "metabolic",
-             "highest_phase": phase, "outcome": "Failed Phase 2" if phase == "Phase 2" else "Failed Phase 1",
-             "approval_date": None, "commercialization_date": None}
-            for i, phase in enumerate(
-                ["Phase 2", "Phase 2", "Phase 2", "Phase 1", "Phase 1"]
-            )
+            self._record("c0", phases={"Phase 1", "Phase 2"}),
+            self._record("c1", phases={"Phase 1", "Phase 2"}),
+            self._record("c2", phases={"Phase 1", "Phase 2"}),
+            self._record("c3", phases={"Phase 1"}),
+            self._record("c4", phases={"Phase 1"}),
         ]
         stage = FunnelAggregationStage()
         result = stage._transition_rate(records, "Phase 1", "Phase 2")
@@ -334,25 +349,121 @@ class TestTransitionRate:
         assert result.numerator == 3
         assert result.rate == pytest.approx(0.6)
 
-    def test_transition_rate_excludes_ongoing_from_denominator(self):
-        """Ongoing/Unknown candidates should not count in numerator or denominator."""
+    def test_transition_rate_ongoing_without_terminal_trials_excluded(self):
+        """Candidates with no terminal phase observations are not in any cohort."""
         records = [
-            {"candidate_id": "c1", "drug": "A", "indication": "X",
-             "modality": "peptide", "disease_area": "metabolic",
-             "highest_phase": "Phase 2", "outcome": "Failed Phase 2"},
-            {"candidate_id": "c2", "drug": "B", "indication": "Y",
-             "modality": "peptide", "disease_area": "metabolic",
-             "highest_phase": "Phase 1", "outcome": "Ongoing"},
-            {"candidate_id": "c3", "drug": "C", "indication": "Z",
-             "modality": "peptide", "disease_area": "metabolic",
-             "highest_phase": "Phase 1", "outcome": "Unknown"},
+            self._record("c1", phases={"Phase 1", "Phase 2"}),
+            self._record("c2", phases=set(), outcome="Ongoing"),
+            self._record("c3", phases=set(), outcome="Unknown"),
         ]
         stage = FunnelAggregationStage()
         result = stage._transition_rate(records, "Phase 1", "Phase 2")
-        # Only c1 is resolved and reached Phase 1+; c2 and c3 are excluded
         assert result.denominator == 1
         assert result.numerator == 1
         assert result.rate == pytest.approx(1.0)
+
+    # --- Scenario tests matching the plan (Drugs A / B / C) --------------------
+
+    def test_drug_a_trials_and_approval_counts_across_transitions(self):
+        """P1+P2 trials + Approved → P1→P2 success; P2→P3 success (Approval is later); not in P3 cohort."""
+        records = [
+            self._record(
+                "drug_a",
+                phases={"Phase 1", "Phase 2", "Approval"},
+                outcome="Approved",
+                approval_date=date(2022, 1, 1),
+            )
+        ]
+        stage = FunnelAggregationStage()
+        p1p2 = stage._transition_rate(records, "Phase 1", "Phase 2")
+        p2p3 = stage._transition_rate(records, "Phase 2", "Phase 3")
+        p3app = stage._transition_rate(records, "Phase 3", "Approval")
+        app_mkt = stage._transition_rate(records, "Approval", "Market")
+
+        assert (p1p2.numerator, p1p2.denominator) == (1, 1)
+        assert (p2p3.numerator, p2p3.denominator) == (1, 1)
+        assert (p3app.numerator, p3app.denominator) == (0, 0)   # not in P3 cohort
+        assert (app_mkt.numerator, app_mkt.denominator) == (0, 1)  # no Market evidence
+
+    def test_drug_b_phase3_only_no_approval(self):
+        """P3 trial only, no approval → P3→Approval denom but not numer; absent from P1/P2 cohorts."""
+        records = [self._record("drug_b", phases={"Phase 3"}, outcome="Failed Phase 3",
+                                highest_phase="Phase 3")]
+        stage = FunnelAggregationStage()
+        assert stage._transition_rate(records, "Phase 1", "Phase 2").denominator == 0
+        assert stage._transition_rate(records, "Phase 2", "Phase 3").denominator == 0
+        p3 = stage._transition_rate(records, "Phase 3", "Approval")
+        assert p3.denominator == 1
+        assert p3.numerator == 0
+
+    def test_drug_c_p1_trial_with_approval(self):
+        """P1 trial + Approved → P1→P2 success; not in P2/P3 cohorts."""
+        records = [self._record(
+            "drug_c", phases={"Phase 1", "Approval"},
+            outcome="Approved", approval_date=date(2021, 5, 1),
+        )]
+        stage = FunnelAggregationStage()
+        p1p2 = stage._transition_rate(records, "Phase 1", "Phase 2")
+        p2p3 = stage._transition_rate(records, "Phase 2", "Phase 3")
+        p3app = stage._transition_rate(records, "Phase 3", "Approval")
+
+        assert (p1p2.numerator, p1p2.denominator) == (1, 1)
+        assert (p2p3.numerator, p2p3.denominator) == (0, 0)
+        assert (p3app.numerator, p3app.denominator) == (0, 0)
+
+    def test_advancement_via_non_terminal_later_trial(self):
+        """COMPLETED P1 + RECRUITING P2 → in P1 cohort, P1→P2 success via advancement."""
+        records = [{
+            "candidate_id": "c1", "drug": "c1", "indication": "X",
+            "modality": "peptide", "disease_area": "metabolic",
+            "highest_phase": "Phase 2", "outcome": "Ongoing",
+            "approval_date": None, "commercialization_date": None,
+            "phases_observed": {"Phase 1"},
+            "phases_advanced": {"Phase 1", "Phase 2"},
+        }]
+        stage = FunnelAggregationStage()
+        p1p2 = stage._transition_rate(records, "Phase 1", "Phase 2")
+        p2p3 = stage._transition_rate(records, "Phase 2", "Phase 3")
+        assert (p1p2.numerator, p1p2.denominator) == (1, 1)
+        # Not in P2 cohort — P2 trial wasn't terminal.
+        assert p2p3.denominator == 0
+
+    def test_failed_phase_outcome_credits_advancement_not_cohort(self):
+        """COMPLETED P1 + FAILED_PHASE_2 verdict → P1→P2 success; P2 not in cohort.
+
+        The adjudicator's FAILED_PHASE_2 verdict evidences the drug reached
+        Phase 2 (advancement), but alone is insufficient to place the drug in
+        the P2 cohort for downstream denominators.
+        """
+        records = [{
+            "candidate_id": "c1", "drug": "c1", "indication": "X",
+            "modality": "peptide", "disease_area": "metabolic",
+            "highest_phase": "Phase 2", "outcome": "Failed Phase 2",
+            "approval_date": None, "commercialization_date": None,
+            "phases_observed": {"Phase 1"},
+            "phases_advanced": {"Phase 1", "Phase 2"},
+        }]
+        stage = FunnelAggregationStage()
+        p1p2 = stage._transition_rate(records, "Phase 1", "Phase 2")
+        p2p3 = stage._transition_rate(records, "Phase 2", "Phase 3")
+        assert (p1p2.numerator, p1p2.denominator) == (1, 1)
+        assert p2p3.denominator == 0
+
+    def test_approval_to_market_requires_commercialization_evidence(self):
+        """Approval cohort members without Market evidence don't count as success."""
+        records = [
+            self._record("approved_only", phases={"Phase 3", "Approval"}, outcome="Approved",
+                         approval_date=date(2020, 1, 1)),
+            self._record("commercialized", phases={"Phase 3", "Approval", "Market"},
+                         outcome="Commercialized",
+                         approval_date=date(2019, 1, 1),
+                         commercialization_date=date(2020, 1, 1)),
+        ]
+        stage = FunnelAggregationStage()
+        result = stage._transition_rate(records, "Approval", "Market")
+        assert result.denominator == 2
+        assert result.numerator == 1
+        assert result.rate == pytest.approx(0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -382,13 +493,17 @@ class TestJoinDateKeys:
 # ---------------------------------------------------------------------------
 
 class TestTransitionRateDuration:
-    def _base_record(self, cid, phase, outcome="Ongoing", approval_date=None, commercialization_date=None):
+    def _base_record(self, cid, phase, outcome="Ongoing", approval_date=None, commercialization_date=None,
+                     phases_observed=None):
+        if phases_observed is None:
+            phases_observed = set()
         return {
             "candidate_id": cid, "drug": "A", "indication": "X",
             "modality": "peptide", "disease_area": "metabolic",
             "highest_phase": phase, "outcome": outcome,
             "approval_date": approval_date,
             "commercialization_date": commercialization_date,
+            "phases_observed": set(phases_observed),
         }
 
     def test_transition_rate_has_avg_duration_years_attribute(self):
@@ -415,6 +530,155 @@ class TestTransitionRateDuration:
         result = stage._transition_rate(records, "Approval", "Market")
         assert result.avg_duration_years is not None
         assert result.avg_duration_years > 0
+
+
+# ---------------------------------------------------------------------------
+# _join — phases_observed construction
+# ---------------------------------------------------------------------------
+
+def _build(cid, trial_ids, modality="peptide", disease_area="metabolic",
+           outcome=CandidateOutcome.ONGOING, highest_phase=TrialPhase.PHASE_1,
+           approval_date=None, commercialization_date=None):
+    from pipeline.models import CandidateAttributes
+    cand = Candidate(
+        candidate_id=cid, drug_name=cid, indication="X",
+        trial_ids=list(trial_ids), highest_phase=highest_phase,
+    )
+    attrs = CandidateAttributes(
+        candidate_id=cid, drug_modality=modality, disease_area=disease_area,
+    )
+    out = CandidateOutcomeRecord(
+        candidate_id=cid, outcome=outcome,
+        approval_date=approval_date, commercialization_date=commercialization_date,
+    )
+    return cand, attrs, out
+
+
+def _tables(triples, trials):
+    candidates = [c for c, _, _ in triples]
+    attr_map = {c.candidate_id: a for c, a, _ in triples}
+    out_map = {c.candidate_id: o for c, _, o in triples}
+    return (
+        CandidateTable(candidates=candidates),
+        AttributeTable(attributes=attr_map),
+        OutcomeTable(outcomes=out_map),
+        TrialTable(trials=list(trials)),
+    )
+
+
+class TestJoinPhasesObserved:
+    def test_terminal_completed_trial_adds_phase(self):
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(nct_id="N1", title="", intervention="", indication="",
+                           sponsor="", phase=TrialPhase.PHASE_2, status=TrialStatus.COMPLETED)]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == {"Phase 2"}
+
+    def test_recruiting_trial_does_not_add_phase(self):
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(nct_id="N1", title="", intervention="", indication="",
+                           sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.RECRUITING)]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == set()
+
+    def test_suspended_trial_adds_phase(self):
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(nct_id="N1", title="", intervention="", indication="",
+                           sponsor="", phase=TrialPhase.PHASE_2, status=TrialStatus.SUSPENDED)]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == {"Phase 2"}
+
+    def test_active_not_recruiting_does_not_add_phase(self):
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(nct_id="N1", title="", intervention="", indication="",
+                           sponsor="", phase=TrialPhase.PHASE_2,
+                           status=TrialStatus.ACTIVE_NOT_RECRUITING)]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == set()
+
+    def test_phase4_terminal_trial_contributes_to_approval_cohort(self):
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(nct_id="N1", title="", intervention="", indication="",
+                           sponsor="", phase=TrialPhase.PHASE_4, status=TrialStatus.COMPLETED)]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert "Approval" in records[0]["phases_observed"]
+
+    def test_approved_outcome_adds_approval_cohort(self):
+        triples = [_build("c1", [], outcome=CandidateOutcome.APPROVED,
+                          approval_date=date(2020, 1, 1))]
+        ct, at, ot, tt = _tables(triples, [])
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert "Approval" in records[0]["phases_observed"]
+        assert "Market" not in records[0]["phases_observed"]
+
+    def test_commercialized_outcome_adds_market_cohort(self):
+        triples = [_build("c1", [], outcome=CandidateOutcome.COMMERCIALIZED,
+                          approval_date=date(2019, 1, 1),
+                          commercialization_date=date(2020, 1, 1))]
+        ct, at, ot, tt = _tables(triples, [])
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert {"Approval", "Market"} <= records[0]["phases_observed"]
+
+    def test_join_without_trial_table_yields_empty_clinical_phases(self):
+        triples = [_build("c1", ["N1"])]
+        ct, at, ot, _ = _tables(triples, [])
+        records = FunnelAggregationStage()._join(ct, at, ot, None)
+        assert records[0]["phases_observed"] == set()
+        assert records[0]["phases_advanced"] == set()
+
+    def test_recruiting_trial_counts_as_advancement_only(self):
+        """COMPLETED P1 + RECRUITING P2 → P1 in cohort, P2 in advancement only."""
+        triples = [_build("c1", ["N1", "N2"])]
+        trials = [
+            RawTrial(nct_id="N1", title="", intervention="", indication="",
+                     sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED),
+            RawTrial(nct_id="N2", title="", intervention="", indication="",
+                     sponsor="", phase=TrialPhase.PHASE_2, status=TrialStatus.RECRUITING),
+        ]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == {"Phase 1"}
+        assert records[0]["phases_advanced"] == {"Phase 1", "Phase 2"}
+
+    def test_active_not_recruiting_late_phase_counts_as_advancement(self):
+        triples = [_build("c1", ["N1", "N2"])]
+        trials = [
+            RawTrial(nct_id="N1", title="", intervention="", indication="",
+                     sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED),
+            RawTrial(nct_id="N2", title="", intervention="", indication="",
+                     sponsor="", phase=TrialPhase.PHASE_3,
+                     status=TrialStatus.ACTIVE_NOT_RECRUITING),
+        ]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == {"Phase 1"}
+        assert "Phase 3" in records[0]["phases_advanced"]
+
+    def test_failed_phase_outcome_enriches_advancement_only(self):
+        """FAILED_PHASE_2 outcome credits advancement but not cohort membership.
+
+        Without corroborating terminal trial data at Phase 2, the adjudicator
+        verdict alone must not place the candidate in the Phase 2 cohort.
+        """
+        triples = [_build("c1", [], outcome=CandidateOutcome.FAILED_PHASE_2)]
+        ct, at, ot, tt = _tables(triples, [])
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert "Phase 2" not in records[0]["phases_observed"]
+        assert "Phase 2" in records[0]["phases_advanced"]
+
+    def test_approved_outcome_does_not_backfill_clinical_phases(self):
+        """APPROVED outcome without trial data stays out of P1/P2/P3 clinical cohorts."""
+        triples = [_build("c1", [], outcome=CandidateOutcome.APPROVED,
+                          approval_date=date(2020, 1, 1))]
+        ct, at, ot, tt = _tables(triples, [])
+        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == {"Approval"}
+        assert records[0]["phases_advanced"] == {"Approval"}
 
 
 # ---------------------------------------------------------------------------

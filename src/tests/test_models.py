@@ -78,6 +78,9 @@ class TestTrialStatus:
     def test_active_not_recruiting_value(self):
         assert TrialStatus.ACTIVE_NOT_RECRUITING.value == "Active, not recruiting"
 
+    def test_suspended_value(self):
+        assert TrialStatus.SUSPENDED.value == "Suspended"
+
     def test_unknown_value(self):
         assert TrialStatus.UNKNOWN.value == "Unknown"
 
@@ -87,7 +90,7 @@ class TestTrialStatus:
     def test_all_members_present(self):
         expected = {
             "Recruiting", "Completed", "Terminated",
-            "Withdrawn", "Active, not recruiting", "Unknown",
+            "Withdrawn", "Active, not recruiting", "Suspended", "Unknown",
         }
         assert {s.value for s in TrialStatus} == expected
 
