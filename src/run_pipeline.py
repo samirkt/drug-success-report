@@ -66,6 +66,17 @@ def parse_args() -> argparse.Namespace:
         help="Keep only single-intervention/single-condition trials; drops basket and umbrella trials.",
     )
     parser.add_argument(
+        "--use-ct-cache",
+        action="store_true",
+        default=False,
+        help="Reuse a local cache of AACT query results to skip re-hitting the clinical trials DB.",
+    )
+    parser.add_argument(
+        "--ct-cache-path",
+        default="aact_cache.pkl",
+        help="Path to the AACT fetch cache file (only used when --use-ct-cache is set).",
+    )
+    parser.add_argument(
         "--benchmark",
         default=None,
         metavar="PATH",
@@ -96,6 +107,8 @@ def main() -> None:
         max_trials=args.max_trials if args.max_trials > 0 else None,
         peptide_only_report=not args.all_modalities,
         filter_single_arm=args.single_arm,
+        use_ct_cache=args.use_ct_cache,
+        ct_cache_path=args.ct_cache_path,
     )
 
     pipeline = Pipeline(config)

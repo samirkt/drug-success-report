@@ -60,6 +60,10 @@ class PipelineConfig:
     # Knowledge cache
     cache_path: str | None = "knowledge_cache.db"
 
+    # AACT (clinical trials DB) fetch cache — dev convenience to skip re-hitting AACT
+    use_ct_cache: bool = False
+    ct_cache_path: str = "aact_cache.pkl"
+
     # DrugBank normalization / deduplication
     drugbank_csv_path: Optional[Path] = None
     drop_unmatched_drugbank: bool = True
@@ -220,12 +224,18 @@ class Pipeline:
             from .knowledge_cache import KnowledgeCache
             cache = KnowledgeCache(cfg.cache_path)
 
+        ct_cache = None
+        if cfg.use_ct_cache:
+            from .aact_cache import AACTCache
+            ct_cache = AACTCache(cfg.ct_cache_path)
+
         return {
             "ingestion": TrialIngestionStage(
                 source=cfg.data_source,
                 filters=cfg.ingestion_filters,
                 max_trials=cfg.max_trials,
                 filter_single_arm=cfg.filter_single_arm,
+                ct_cache=ct_cache,
             ),
             "clustering": CandidateClusteringStage(
                 method=cfg.clustering_method,

@@ -27,6 +27,7 @@ from typing import Any
 import psycopg
 
 from aact_db import AACTConfig, connection, load_config
+from ..aact_cache import AACTCache
 from ..models import RawTrial, TrialPhase, TrialPValue, TrialStatus, TrialTable
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,7 @@ class TrialIngestionStage:
         max_trials: int | None = 500,
         aact_config: AACTConfig | None = None,
         filter_single_arm: bool = False,
+        ct_cache: AACTCache | None = None,
     ):
         """
         Args:
@@ -169,12 +171,14 @@ class TrialIngestionStage:
             filter_single_arm:  when True, drop basket and umbrella trials, keeping only
                                 NCT IDs with exactly one unique intervention and one unique
                                 condition.
+            ct_cache:           optional AACTCache to reuse raw fetch results across runs.
         """
         self.source = source
         self.filters = filters or {}
         self.max_trials = max_trials
         self.aact_config = aact_config
         self.filter_single_arm = filter_single_arm
+        self.ct_cache = ct_cache
 
     def run(self) -> TrialTable:
         """Fetch and normalize trials. Returns a populated TrialTable."""
@@ -335,6 +339,18 @@ class TrialIngestionStage:
         """
         if not single_arm_nct_ids:
             return {}
+
+        cache_key: str | None = None
+        if self.ct_cache is not None:
+            cache_key = AACTCache.make_pvalues_key(single_arm_nct_ids)
+            cached = self.ct_cache.get_pvalues(cache_key)
+            if cached is not None:
+                logger.info(
+                    "AACT cache hit: p-values for %d NCT IDs served from %s",
+                    len(cached), cache_key[:12],
+                )
+                return cached
+
         sql = """
             SELECT
                 o.nct_id,
@@ -377,6 +393,10 @@ class TrialIngestionStage:
             "P-value fetch: found data for %d / %d single-arm NCT IDs",
             len(result), len(single_arm_nct_ids),
         )
+
+        if self.ct_cache is not None and cache_key is not None:
+            self.ct_cache.put_pvalues(cache_key, result)
+
         return result
 
     # ------------------------------------------------------------------
@@ -403,6 +423,14 @@ class TrialIngestionStage:
         Returns one dict per (study, drug, condition) combination so that
         multi-drug or multi-condition studies are fully expanded.
         """
+        cache_key: str | None = None
+        if self.ct_cache is not None:
+            cache_key = AACTCache.make_rows_key(self.source, filters, self.max_trials)
+            cached = self.ct_cache.get_rows(cache_key)
+            if cached is not None:
+                logger.info("AACT cache hit: %d rows served from %s", len(cached), cache_key[:12])
+                return cached
+
         sql, params = self._build_aact_sql(filters)
 
         if self.max_trials is not None:
@@ -433,6 +461,10 @@ class TrialIngestionStage:
             )
 
         logger.info("Fetched %d intervention–condition rows from AACT.", len(rows))
+
+        if self.ct_cache is not None and cache_key is not None:
+            self.ct_cache.put_rows(cache_key, rows)
+
         return rows
 
     def _build_aact_sql(self, filters: dict) -> tuple[str, dict]:
