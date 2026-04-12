@@ -796,6 +796,9 @@ def time_period_narrative(
                 parts.append(f"Disease areas showing decline: {dec_str}.")
 
     parts.append(
+        "\n\n{{figure:time_period_transitions:Phase transition success rates and LOA by time period. Legend shows candidate counts per cohort.}}"
+    )
+    parts.append(
         "\n\n{{figure:time_period_comparison:LOA from Phase 1 by disease area and time period.}}"
     )
     parts.append(

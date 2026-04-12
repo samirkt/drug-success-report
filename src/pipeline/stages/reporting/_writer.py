@@ -235,7 +235,8 @@ def _write_html_legacy(report: ReportOutput, output_path: str) -> None:
     figure_order = [
         "disease_breakdown", "modality_heatmap", "disease_heatmap",
         "loa_by_disease", "loa_by_modality", "timeline_by_disease", "oncology_comparison",
-        "time_period_comparison", "modality_proportion", "sponsor_concentration",
+        "time_period_transitions", "time_period_comparison",
+        "modality_proportion", "sponsor_concentration",
     ]
     figure_order.append("overall_spider")
     figure_order.extend(
