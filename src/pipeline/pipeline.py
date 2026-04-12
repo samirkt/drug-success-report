@@ -72,6 +72,12 @@ class PipelineConfig:
     report_output_path: str | None = None
     report_formats: list[str] = field(default_factory=lambda: ["html"])
     peptide_only_report: bool = True
+    # Time-period cohorts for the multi-period LOA comparison.
+    # None = auto-split (historical vs. last decade, or median if all recent).
+    # Override with e.g. [(2005, 2014), (2015, 2024)].
+    time_periods: list[tuple[int, int]] | None = field(
+        default_factory=lambda: [(1962, 1992), (1993, 2006), (2007, 2024)]
+    )
 
 
 @dataclass
@@ -258,5 +264,6 @@ class Pipeline:
                 output_path=cfg.report_output_path,
                 formats=cfg.report_formats,
                 peptide_only=cfg.peptide_only_report,
+                time_periods=cfg.time_periods,
             ),
         }
