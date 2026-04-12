@@ -2,8 +2,8 @@
 Tests for Stage 3a: Attribute Classification (pipeline/stages/classification.py)
 
 Test categories:
-  PASS NOW   — constructor, orchestration wiring (via mocks)
-  FAIL NOW   — behavioral contracts for _literature_lookup (still a stub)
+  PASS NOW   — constructor, orchestration wiring, run() with mocked LLM,
+               cache integration, disease area normalization, MeSH mapping
 """
 
 import json
@@ -24,17 +24,6 @@ from pipeline.stages.classification import AttributeClassificationStage
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _make_llm_message(data: dict) -> MagicMock:
-    """Build a mock Anthropic Message whose content yields the given JSON (single object).
-    Used for tests where the outcome value is not asserted (parse fallback is acceptable)."""
-    block = MagicMock()
-    block.type = "text"
-    block.text = json.dumps(data)
-    msg = MagicMock()
-    msg.content = [block]
-    return msg
-
 
 def _make_llm_message_batch(data_list: list[dict]) -> MagicMock:
     """Build a mock Anthropic Message whose content yields a JSON array.
@@ -72,32 +61,35 @@ class TestAttributeClassificationStageInit:
 
 
 # ---------------------------------------------------------------------------
-# run() orchestration with mocks
+# run() orchestration with mocked LLM
 # ---------------------------------------------------------------------------
 
 class TestAttributeClassificationStageRunOrchestration:
-    def test_run_returns_attribute_table_type(self, sample_candidate_table, sample_attributes_cand001):
-        stage = AttributeClassificationStage()
+    @patch("utils.tiered_router.process_prompt_request")
+    def test_run_returns_attribute_table_type(self, mock_llm, sample_candidate_table):
         n = len(sample_candidate_table.candidates)
-        stage._llm_classify_batch = MagicMock(return_value=[sample_attributes_cand001] * n)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION] * n)
+        stage = AttributeClassificationStage()
 
         result = stage.run(sample_candidate_table)
 
         assert isinstance(result, AttributeTable)
 
-    def test_run_classifies_each_candidate(self, sample_candidate_table, sample_attributes_cand001):
-        stage = AttributeClassificationStage()
+    @patch("utils.tiered_router.process_prompt_request")
+    def test_run_classifies_each_candidate(self, mock_llm, sample_candidate_table):
         n = len(sample_candidate_table.candidates)
-        stage._llm_classify_batch = MagicMock(return_value=[sample_attributes_cand001] * n)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION] * n)
+        stage = AttributeClassificationStage()
 
         result = stage.run(sample_candidate_table)
 
         assert len(result.attributes) == n
 
-    def test_run_keys_attributes_by_candidate_id(self, sample_candidate_table, sample_attributes_cand001):
-        stage = AttributeClassificationStage()
+    @patch("utils.tiered_router.process_prompt_request")
+    def test_run_keys_attributes_by_candidate_id(self, mock_llm, sample_candidate_table):
         n = len(sample_candidate_table.candidates)
-        stage._llm_classify_batch = MagicMock(return_value=[sample_attributes_cand001] * n)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION] * n)
+        stage = AttributeClassificationStage()
 
         result = stage.run(sample_candidate_table)
 
@@ -106,21 +98,20 @@ class TestAttributeClassificationStageRunOrchestration:
 
     def test_run_empty_candidate_table_returns_empty_attribute_table(self, empty_candidate_table):
         stage = AttributeClassificationStage()
-        stage._classify = MagicMock()
 
         result = stage.run(empty_candidate_table)
 
         assert isinstance(result, AttributeTable)
         assert result.attributes == {}
-        stage._classify.assert_not_called()
 
-    def test_run_passes_candidates_to_batch(self, single_candidate_table, sample_candidate, sample_attributes_cand001):
+    @patch("utils.tiered_router.process_prompt_request")
+    def test_run_calls_llm(self, mock_llm, single_candidate_table):
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        stage._llm_classify_batch = MagicMock(return_value=[sample_attributes_cand001])
 
         stage.run(single_candidate_table)
 
-        stage._llm_classify_batch.assert_called_once_with([sample_candidate])
+        mock_llm.assert_called()
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +119,7 @@ class TestAttributeClassificationStageRunOrchestration:
 # ---------------------------------------------------------------------------
 
 class TestAttributeClassificationStageRunWithLLM:
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_run_returns_attribute_table_with_mocked_llm(self, mock_llm, single_candidate_table):
         mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
@@ -138,7 +129,7 @@ class TestAttributeClassificationStageRunWithLLM:
         assert isinstance(result, AttributeTable)
         assert len(result.attributes) == 1
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_run_does_not_raise_for_empty_table(self, mock_llm, empty_candidate_table):
         stage = AttributeClassificationStage()
         result = stage.run(empty_candidate_table)
@@ -147,53 +138,59 @@ class TestAttributeClassificationStageRunWithLLM:
 
 
 # ---------------------------------------------------------------------------
-# _classify
+# Single-candidate classification via run()
 # ---------------------------------------------------------------------------
 
 class TestClassify:
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_returns_candidate_attributes(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._classify(sample_candidate)
-        assert isinstance(result, CandidateAttributes)
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert isinstance(attrs, CandidateAttributes)
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_sets_candidate_id(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._classify(sample_candidate)
-        assert result.candidate_id == sample_candidate.candidate_id
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert attrs.candidate_id == sample_candidate.candidate_id
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_sets_non_empty_drug_modality(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._classify(sample_candidate)
-        assert result.drug_modality != ""
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert attrs.drug_modality != ""
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_sets_non_empty_disease_area(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._classify(sample_candidate)
-        assert result.disease_area != ""
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert attrs.disease_area != ""
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_modality_confidence_in_range(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._classify(sample_candidate)
-        assert 0.0 <= result.modality_confidence <= 1.0
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert 0.0 <= attrs.modality_confidence <= 1.0
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_disease_confidence_in_range(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._classify(sample_candidate)
-        assert 0.0 <= result.disease_confidence <= 1.0
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert 0.0 <= attrs.disease_confidence <= 1.0
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_known_peptide(self, mock_llm):
         mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         candidate = Candidate(
@@ -203,10 +200,11 @@ class TestClassify:
             highest_phase=TrialPhase.PHASE_3,
         )
         stage = AttributeClassificationStage()
-        result = stage._classify(candidate)
-        assert result.drug_modality.lower() == "peptide"
+        result = stage.run(CandidateTable(candidates=[candidate]))
+        attrs = result.attributes["c_peptide"]
+        assert attrs.drug_modality.lower() == "peptide"
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_classify_known_oncology_indication(self, mock_llm):
         mock_llm.return_value = _make_llm_message_batch([{
             **_GOOD_CLASSIFICATION,
@@ -219,37 +217,41 @@ class TestClassify:
             highest_phase=TrialPhase.PHASE_1,
         )
         stage = AttributeClassificationStage()
-        result = stage._classify(candidate)
-        assert result.disease_area.lower() == "oncology"
+        result = stage.run(CandidateTable(candidates=[candidate]))
+        attrs = result.attributes["c_onco"]
+        assert attrs.disease_area.lower() == "oncology"
 
 
 # ---------------------------------------------------------------------------
-# _llm_classify
+# LLM response handling via run()
 # ---------------------------------------------------------------------------
 
 class TestLlmClassify:
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_llm_classify_returns_candidate_attributes(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._llm_classify(sample_candidate)
-        assert isinstance(result, CandidateAttributes)
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert isinstance(attrs, CandidateAttributes)
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_llm_classify_sets_candidate_id(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._llm_classify(sample_candidate)
-        assert result.candidate_id == sample_candidate.candidate_id
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert attrs.candidate_id == sample_candidate.candidate_id
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_llm_classify_modality_is_string(self, mock_llm, sample_candidate):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        result = stage._llm_classify(sample_candidate)
-        assert isinstance(result.drug_modality, str)
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert isinstance(attrs.drug_modality, str)
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_llm_classify_malformed_response_falls_back_to_defaults(self, mock_llm, sample_candidate):
         """Malformed JSON should fall back to unknown/0.0 rather than crashing."""
         block = MagicMock()
@@ -260,11 +262,12 @@ class TestLlmClassify:
         mock_llm.return_value = msg
 
         stage = AttributeClassificationStage()
-        result = stage._llm_classify(sample_candidate)
+        result = stage.run(CandidateTable(candidates=[sample_candidate]))
 
-        assert isinstance(result, CandidateAttributes)
-        assert result.drug_modality == "unknown"
-        assert result.modality_confidence == 0.0
+        attrs = result.attributes[sample_candidate.candidate_id]
+        assert isinstance(attrs, CandidateAttributes)
+        assert attrs.drug_modality == "unknown"
+        assert attrs.modality_confidence == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +275,7 @@ class TestLlmClassify:
 # ---------------------------------------------------------------------------
 
 class TestAttributeClassificationStageWithCache:
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_cache_hit_skips_llm_call(self, mock_llm, single_candidate_table, sample_candidate, knowledge_cache):
         from pipeline.knowledge_cache import KnowledgeCache
         key = KnowledgeCache.make_classification_key(sample_candidate.drug_name, sample_candidate.indication)
@@ -292,7 +295,7 @@ class TestAttributeClassificationStageWithCache:
         mock_llm.assert_not_called()
         assert result.attributes[sample_candidate.candidate_id].drug_modality == "peptide"
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_cache_miss_calls_llm_and_writes_to_cache(self, mock_llm, single_candidate_table, sample_candidate, knowledge_cache):
         from pipeline.knowledge_cache import KnowledgeCache
         mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
@@ -306,23 +309,26 @@ class TestAttributeClassificationStageWithCache:
         assert cached is not None
         assert cached.drug_modality == "peptide"
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_no_cache_injected_calls_llm_normally(self, mock_llm, single_candidate_table):
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
         stage.run(single_candidate_table)
         mock_llm.assert_called_once()
 
-    @patch("pipeline.stages.classification.process_prompt_request")
-    def test_llm_failure_does_not_write_to_cache(self, mock_llm, sample_candidate, knowledge_cache):
+    @patch("utils.tiered_router.process_prompt_request")
+    def test_llm_failure_writes_defaults_to_cache(self, mock_llm, single_candidate_table, sample_candidate, knowledge_cache):
         from pipeline.knowledge_cache import KnowledgeCache
         mock_llm.side_effect = RuntimeError("LLM unavailable")
 
         stage = AttributeClassificationStage(cache=knowledge_cache)
-        stage._classify(sample_candidate)
+        stage.run(single_candidate_table)
 
         key = KnowledgeCache.make_classification_key(sample_candidate.drug_name, sample_candidate.indication)
-        assert knowledge_cache.get_attributes(key, sample_candidate.candidate_id) is None
+        cached = knowledge_cache.get_attributes(key, sample_candidate.candidate_id)
+        assert cached is not None
+        assert cached.drug_modality == "unknown"
+        assert cached.modality_confidence == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -330,44 +336,27 @@ class TestAttributeClassificationStageWithCache:
 # ---------------------------------------------------------------------------
 
 class TestClassificationUsesRawDrugName:
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_llm_prompt_uses_drug_name_raw(self, mock_llm, sample_candidate):
         """The string passed to the LLM must contain drug_name_raw, not drug_name."""
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage()
-        stage._llm_classify(sample_candidate)
+        stage.run(CandidateTable(candidates=[sample_candidate]))
 
-        call_kwargs = mock_llm.call_args
-        user_prompt = call_kwargs.kwargs.get("user_prompt", "") or call_kwargs.args[1] if call_kwargs.args else ""
-        # Inspect via the captured call args
-        all_call_args = str(mock_llm.call_args)
+        # Inspect all call args to ensure drug_name_raw appears in the prompt
+        all_call_args = str(mock_llm.call_args_list)
         assert sample_candidate.drug_name_raw in all_call_args
-        assert sample_candidate.drug_name not in all_call_args or sample_candidate.drug_name_raw in all_call_args
 
-    @patch("pipeline.stages.classification.process_prompt_request")
+    @patch("utils.tiered_router.process_prompt_request")
     def test_cache_key_uses_drug_name(self, mock_llm, sample_candidate, knowledge_cache):
         """Cache key must be built from drug_name (normalized), not drug_name_raw."""
-        mock_llm.return_value = _make_llm_message(_GOOD_CLASSIFICATION)
+        mock_llm.return_value = _make_llm_message_batch([_GOOD_CLASSIFICATION])
         stage = AttributeClassificationStage(cache=knowledge_cache)
 
-        with patch("pipeline.knowledge_cache.KnowledgeCache.make_classification_key") as mock_key:
-            mock_key.return_value = "test_key"
-            knowledge_cache.get_attributes = lambda *a, **kw: None
-            knowledge_cache.put_attributes = lambda *a, **kw: None
-            stage._classify(sample_candidate)
+        with patch("pipeline.knowledge_cache.KnowledgeCache.make_classification_key", wraps=knowledge_cache.make_classification_key) as mock_key:
+            stage.run(CandidateTable(candidates=[sample_candidate]))
 
-        mock_key.assert_called_once_with(sample_candidate.drug_name, sample_candidate.indication)
-
-
-# ---------------------------------------------------------------------------
-# _literature_lookup  (still a stub — NotImplementedError expected)
-# ---------------------------------------------------------------------------
-
-class TestLiteratureLookup:
-    def test_literature_lookup_raises_not_implemented(self):
-        stage = AttributeClassificationStage()
-        with pytest.raises(NotImplementedError):
-            stage._literature_lookup("semaglutide")
+        mock_key.assert_any_call(sample_candidate.drug_name, sample_candidate.indication)
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ Test categories:
   FAIL NOW   — full integration run() without mocks (stubs not yet implemented)
 """
 
+import os
 from unittest.mock import MagicMock, patch, call
 import concurrent.futures
 
@@ -419,6 +420,10 @@ class TestPipelineRunNotImplemented:
 # Full integration  (all stubs need to be implemented)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(
+    not os.environ.get("RUN_INTEGRATION"),
+    reason="Integration test requires live AACT DB and Anthropic API key. Set RUN_INTEGRATION=1 to run.",
+)
 class TestPipelineIntegration:
     def test_full_pipeline_with_aact_source(self):
         """End-to-end pipeline run against the live AACT should succeed.
