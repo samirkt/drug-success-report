@@ -76,7 +76,7 @@ class PipelineConfig:
     # None = auto-split (historical vs. last decade, or median if all recent).
     # Override with e.g. [(2005, 2014), (2015, 2024)].
     time_periods: list[tuple[int, int]] | None = field(
-        default_factory=lambda: [(1962, 1992), (1993, 2006), (2007, 2024)]
+        default_factory=lambda: [(1962, 2000), (2000, 2006), (2007, 2024)]
     )
 
 
