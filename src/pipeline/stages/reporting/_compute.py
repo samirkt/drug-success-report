@@ -9,6 +9,7 @@ from ...models import (
     FunnelSlice,
     TransitionRate,
 )
+from ..aggregation import transition_rate_from_records
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -236,38 +237,26 @@ def oncology_vs_rest(
 # Transition rate from records (for time-period analysis)
 # ---------------------------------------------------------------------------
 
-def compute_transition_rate(
-    records: list[dict], from_phase: str, to_phase: str,
-) -> TransitionRate:
-    """Compute a single transition rate from flat candidate records."""
-    order = REPORTING_PHASE_ORDER
-
-    def effective_level(r: dict) -> int:
-        level = order.get(r["highest_phase"], -1)
-        outcome = r.get("outcome")
-        if outcome == "Approved":
-            level = max(level, 3)
-        elif outcome == "Commercialized":
-            level = max(level, 4)
-        return level
-
-    resolved = [r for r in records if r.get("outcome") not in ("Ongoing", "Unknown", None)]
-    from_level = order[from_phase]
-    to_level = order[to_phase]
-    denominator = sum(1 for r in resolved if effective_level(r) >= from_level)
-    numerator = sum(1 for r in resolved if effective_level(r) >= to_level)
-    rate = numerator / denominator if denominator > 0 else 0.0
-    return TransitionRate(from_phase, to_phase, numerator, denominator, rate)
+# Re-exported as the public name used by reporting components. See
+# `pipeline/stages/aggregation.py` for the authoritative implementation —
+# phase-success rates are computed in exactly one place.
+compute_transition_rate = transition_rate_from_records
 
 
 def build_funnel_slice(
     records: list[dict], disease_area: str | None = None,
 ) -> FunnelSlice:
-    """Build a FunnelSlice from flat candidate records."""
+    """Build a FunnelSlice from flat candidate records.
+
+    Records must carry `phases_observed` / `phases_advanced` keys produced
+    by `FunnelAggregationStage._join`. Rates are computed via the shared
+    `transition_rate_from_records` function in the aggregation module.
+    """
     if disease_area is not None:
         records = [r for r in records if r["disease_area"] == disease_area]
     transitions = [
-        compute_transition_rate(records, f, t) for f, t in REPORTING_TRANSITIONS
+        transition_rate_from_records(records, f, t)
+        for f, t in REPORTING_TRANSITIONS
     ]
     return FunnelSlice(
         modality=None, disease_area=disease_area,

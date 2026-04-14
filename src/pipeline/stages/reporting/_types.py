@@ -11,6 +11,7 @@ if TYPE_CHECKING:
         CandidateTable,
         FunnelResults,
         OutcomeTable,
+        TrialTable,
     )
 
 
@@ -24,6 +25,7 @@ class ReportContext:
     funnel_results: FunnelResults
     peptide_only: bool
     time_periods: list[tuple[int, int]] | None
+    trial_table: TrialTable | None = None
 
 
 @dataclass

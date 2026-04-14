@@ -1204,37 +1204,60 @@ class TestTimelineChart:
 # ---------------------------------------------------------------------------
 
 class TestComputeTransitionRateFromRecords:
+    """`compute_transition_rate` is an alias for the aggregation-stage function.
+
+    Records must carry `phases_observed` / `phases_advanced` keys produced by
+    `FunnelAggregationStage._join`. No more `effective_level` heuristic.
+    """
+
     def test_basic_rate(self):
         records = [
-            {"highest_phase": "Phase 2", "outcome": "Failed Phase 2"},
-            {"highest_phase": "Phase 3", "outcome": "Approved"},
+            {"highest_phase": "Phase 2", "outcome": "Failed Phase 2",
+             "phases_observed": {"Phase 1", "Phase 2"},
+             "phases_advanced": {"Phase 1", "Phase 2"}},
+            {"highest_phase": "Phase 3", "outcome": "Approved",
+             "phases_observed": {"Phase 1", "Phase 2", "Phase 3", "Approval"},
+             "phases_advanced": {"Phase 1", "Phase 2", "Phase 3", "Approval"}},
         ]
         tr = compute_transition_rate(records, "Phase 1", "Phase 2")
         assert tr.denominator == 2
-        assert tr.numerator == 2  # both reached Phase 2+
+        assert tr.numerator == 2
         assert tr.rate == 1.0
 
-    def test_excludes_ongoing(self):
+    def test_candidate_without_phase1_trial_excluded_from_p1_denominator(self):
+        """Approval alone does not back-fill Phase 1 cohort membership."""
         records = [
-            {"highest_phase": "Phase 1", "outcome": "Ongoing"},
-            {"highest_phase": "Phase 2", "outcome": "Failed Phase 2"},
+            {"highest_phase": "Phase 2", "outcome": "Approved",
+             "phases_observed": {"Phase 2", "Approval"},
+             "phases_advanced": {"Phase 2", "Approval"}},
         ]
         tr = compute_transition_rate(records, "Phase 1", "Phase 2")
-        assert tr.denominator == 1  # Ongoing excluded
-        assert tr.numerator == 1
-
-    def test_approved_boosts_level(self):
-        records = [
-            {"highest_phase": "Phase 2", "outcome": "Approved"},  # boosted to level 3
-        ]
-        tr = compute_transition_rate(records, "Phase 3", "Approval")
-        assert tr.denominator == 1
-        assert tr.numerator == 1
+        assert tr.denominator == 0
+        assert tr.rate == 0.0
 
     def test_zero_denominator(self):
         tr = compute_transition_rate([], "Phase 1", "Phase 2")
         assert tr.rate == 0.0
         assert tr.denominator == 0
+
+    def test_matches_aggregation_stage_transition_rate(self):
+        """Contract: the reporting alias and the stage method must agree."""
+        from pipeline.stages.aggregation import FunnelAggregationStage
+        records = [
+            {"highest_phase": "Phase 2", "outcome": "Failed Phase 2",
+             "phases_observed": {"Phase 1", "Phase 2"},
+             "phases_advanced": {"Phase 1", "Phase 2"}},
+            {"highest_phase": "Phase 1", "outcome": "Ongoing",
+             "phases_observed": {"Phase 1"},
+             "phases_advanced": {"Phase 1"}},
+        ]
+        stage_result = FunnelAggregationStage()._transition_rate(
+            records, "Phase 1", "Phase 2",
+        )
+        reporting_result = compute_transition_rate(records, "Phase 1", "Phase 2")
+        assert stage_result.numerator == reporting_result.numerator
+        assert stage_result.denominator == reporting_result.denominator
+        assert stage_result.rate == reporting_result.rate
 
 
 # ---------------------------------------------------------------------------

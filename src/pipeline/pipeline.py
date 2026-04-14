@@ -137,6 +137,7 @@ class Pipeline:
             result.attribute_table,
             result.outcome_table,
             result.funnel_results,
+            result.trial_table,
         )
 
         logger.info("Pipeline complete.")
@@ -212,9 +213,11 @@ class Pipeline:
         attribute_table: AttributeTable,
         outcome_table: OutcomeTable,
         funnel_results: FunnelResults,
+        trial_table: TrialTable | None = None,
     ) -> ReportOutput:
         return self._stages["reporting"].run(
-            candidate_table, attribute_table, outcome_table, funnel_results
+            candidate_table, attribute_table, outcome_table, funnel_results,
+            trial_table=trial_table,
         )
 
     # ------------------------------------------------------------------

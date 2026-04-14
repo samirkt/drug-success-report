@@ -276,42 +276,14 @@ class FunnelAggregationStage:
         to_phase: str,
         phase_avg_duration: dict[str, float] | None = None,
     ) -> TransitionRate:
+        """Thin wrapper around :func:`transition_rate_from_records`.
+
+        Kept as a method for existing callers and tests; all logic lives in
+        the module-level function so reporting components can reuse it
+        without instantiating the stage.
         """
-        Forward-looking cohort rate. A candidate enters the denominator if
-        `from_phase` appears in its `phases_observed`. It enters the numerator
-        if any strictly-later cohort also appears in `phases_observed`.
-        """
-        from_level = _PHASE_ORDER[from_phase]
-        later_phases = {p for p, lvl in _PHASE_ORDER.items() if lvl > from_level}
-
-        from_cohort = [r for r in records if from_phase in r.get("phases_observed", set())]
-        denominator = len(from_cohort)
-        numerator = sum(
-            1 for r in from_cohort
-            if r.get("phases_advanced", r.get("phases_observed", set())) & later_phases
-        )
-        rate = numerator / denominator if denominator > 0 else 0.0
-
-        if from_phase == "Approval":
-            durations = []
-            for r in records:
-                appr = r.get("approval_date")
-                comm = r.get("commercialization_date")
-                if appr and comm:
-                    days = (comm - appr).days
-                    if days > 0:
-                        durations.append(days / 365.25)
-            avg_duration_years = sum(durations) / len(durations) if durations else None
-        else:
-            avg_duration_years = (phase_avg_duration or {}).get(from_phase)
-
-        return TransitionRate(
-            from_phase=from_phase,
-            to_phase=to_phase,
-            numerator=numerator,
-            denominator=denominator,
-            rate=rate,
-            avg_duration_years=avg_duration_years,
+        return transition_rate_from_records(
+            records, from_phase, to_phase, phase_avg_duration=phase_avg_duration,
         )
 
     def _compute_phase_durations(
@@ -334,3 +306,59 @@ class FunnelAggregationStage:
                 if days > 0:
                     buckets[trial.phase.value].append(days / 365.25)
         return {phase: sum(v) / len(v) for phase, v in buckets.items() if v}
+
+
+# ---------------------------------------------------------------------------
+# Public module-level API — single source of truth for phase-success rates
+# ---------------------------------------------------------------------------
+
+def transition_rate_from_records(
+    records: list[dict],
+    from_phase: str,
+    to_phase: str,
+    phase_avg_duration: dict[str, float] | None = None,
+) -> TransitionRate:
+    """Compute one forward-looking cohort transition rate.
+
+    This is the **single source of truth** for phase-success rates. All
+    reporting components that need to (re)compute rates from flat records
+    should call this function. Do not re-implement the formula in reporting
+    code — reach for this helper or consume `FunnelResults` from the
+    aggregation stage.
+
+    Expects each record to carry `phases_observed: set[str]` (terminal
+    cohort membership) and optionally `phases_advanced: set[str]`
+    (advancement evidence, defaults to `phases_observed` if missing).
+    """
+    from_level = _PHASE_ORDER[from_phase]
+    later_phases = {p for p, lvl in _PHASE_ORDER.items() if lvl > from_level}
+
+    from_cohort = [r for r in records if from_phase in r.get("phases_observed", set())]
+    denominator = len(from_cohort)
+    numerator = sum(
+        1 for r in from_cohort
+        if r.get("phases_advanced", r.get("phases_observed", set())) & later_phases
+    )
+    rate = numerator / denominator if denominator > 0 else 0.0
+
+    if from_phase == "Approval":
+        durations = []
+        for r in records:
+            appr = r.get("approval_date")
+            comm = r.get("commercialization_date")
+            if appr and comm:
+                days = (comm - appr).days
+                if days > 0:
+                    durations.append(days / 365.25)
+        avg_duration_years = sum(durations) / len(durations) if durations else None
+    else:
+        avg_duration_years = (phase_avg_duration or {}).get(from_phase)
+
+    return TransitionRate(
+        from_phase=from_phase,
+        to_phase=to_phase,
+        numerator=numerator,
+        denominator=denominator,
+        rate=rate,
+        avg_duration_years=avg_duration_years,
+    )
