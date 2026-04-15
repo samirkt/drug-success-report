@@ -682,6 +682,146 @@ class TestJoinPhasesObserved:
 
 
 # ---------------------------------------------------------------------------
+# Stale-status cohort promotion
+# ---------------------------------------------------------------------------
+
+class TestJoinStaleStatusPromotion:
+    """A non-terminal trial whose latest activity date is older than the
+    configured cutoff should be promoted into the cohort set.
+    """
+
+    _REF = date(2026, 1, 1)
+
+    def _stage(self, stale_cutoff_years: float = 3.0) -> FunnelAggregationStage:
+        return FunnelAggregationStage(
+            reference_date=self._REF,
+            stale_cutoff_years=stale_cutoff_years,
+        )
+
+    def test_stale_unknown_phase1_enters_cohort(self):
+        """An `Unknown` P1 from 2002 with no completion_date is promoted to cohort."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.UNKNOWN,
+            start_date=date(2002, 1, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert "Phase 1" in records[0]["phases_observed"]
+
+    def test_stale_active_not_recruiting_phase3_enters_cohort(self):
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_3,
+            status=TrialStatus.ACTIVE_NOT_RECRUITING,
+            start_date=date(2005, 6, 1), completion_date=date(2010, 6, 1),
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert "Phase 3" in records[0]["phases_observed"]
+
+    def test_recent_recruiting_phase3_does_not_enter_cohort(self):
+        """A P3 trial started last year with status Recruiting is not stale."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_3, status=TrialStatus.RECRUITING,
+            start_date=date(2025, 6, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert "Phase 3" not in records[0]["phases_observed"]
+
+    def test_trial_with_no_dates_is_not_promoted(self):
+        """No activity date → no temporal anchor → never promoted."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.UNKNOWN,
+            start_date=None, completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == set()
+
+    def test_promotion_uses_completion_date_when_present(self):
+        """completion_date takes precedence over start_date for staleness."""
+        # start_date makes this trial look very old, but completion_date is recent.
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_2, status=TrialStatus.UNKNOWN,
+            start_date=date(2001, 1, 1), completion_date=date(2025, 6, 1),
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert "Phase 2" not in records[0]["phases_observed"]
+
+    def test_terminated_status_still_adds_cohort_regardless_of_date(self):
+        """Terminal statuses are unconditionally cohort-eligible (no regression)."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_2, status=TrialStatus.TERMINATED,
+            start_date=date(2025, 12, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert "Phase 2" in records[0]["phases_observed"]
+
+    def test_cutoff_of_zero_promotes_every_dated_non_terminal_trial(self):
+        """stale_cutoff_years=0 → any trial with a past date gets promoted."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.RECRUITING,
+            start_date=date(2025, 12, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage(stale_cutoff_years=0)._join(ct, at, ot, tt)
+        assert "Phase 1" in records[0]["phases_observed"]
+
+    def test_very_large_cutoff_matches_pre_change_behavior(self):
+        """With a huge cutoff, no trial is ever stale — reverts to strict terminal rule."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.UNKNOWN,
+            start_date=date(2002, 1, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage(stale_cutoff_years=999)._join(ct, at, ot, tt)
+        assert records[0]["phases_observed"] == set()
+
+    def test_default_reference_date_is_today(self):
+        """With reference_date=None, date.today() is used — parameterize with a very old trial."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.UNKNOWN,
+            start_date=date(1995, 1, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        stage = FunnelAggregationStage()  # reference_date=None → today
+        records = stage._join(ct, at, ot, tt)
+        assert "Phase 1" in records[0]["phases_observed"]
+
+    def test_stale_phase4_trial_promotes_approval_cohort(self):
+        """A stale `Unknown` Phase 4 trial is promoted into the Approval cohort."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_4, status=TrialStatus.UNKNOWN,
+            start_date=date(2005, 1, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert "Approval" in records[0]["phases_observed"]
+
+
+# ---------------------------------------------------------------------------
 # by_modality_and_disease cross-stratified slices  (PASS NOW)
 # ---------------------------------------------------------------------------
 

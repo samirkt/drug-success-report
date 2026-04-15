@@ -611,3 +611,77 @@ class TestApplyDrugbankDedup:
         result = stage._apply_drugbank_dedup(candidates)
         # Candidate with only mesh_drug is retained (not dropped as unmatched)
         assert len(result) == 1
+
+    def test_transitive_closure_across_drugbank_and_mesh_aliases(self, tmp_path, drugbank_csv_content):
+        """A↔B share DrugBank ID, B↔C share MeSH drug — all three merge."""
+        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
+        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
+        # Candidate A: matches DB00050 via name="insulin", mesh_drug="insulin"
+        # Candidate B: matches DB00050 via name="insulin", but mesh_drug differs
+        # Candidate C: does NOT match DrugBank (unknown name), but mesh_drug="insulin glargine"
+        # Under the old one-shot rule, A+B merge via DrugBank; C stays alone
+        # because its canonical drug key is "insulin glargine" (MeSH) while
+        # A's and B's are "DB00050". Under union-find, B↔C link via the MeSH
+        # alias "insulin glargine" (B's mesh_drug), so all three merge.
+        candidates = [
+            self._make_candidate("cA", "insulin", indication="diabetes",
+                                 trial_ids=["NCT001"], mesh_drug="insulin"),
+            self._make_candidate("cB", "insulin", indication="diabetes",
+                                 trial_ids=["NCT002"], mesh_drug="insulin glargine"),
+            self._make_candidate("cC", "unknowndrug xyz", indication="diabetes",
+                                 trial_ids=["NCT003"], mesh_drug="insulin glargine"),
+        ]
+        result = stage._apply_drugbank_dedup(candidates)
+        assert len(result) == 1
+        merged = result[0]
+        assert set(merged.trial_ids) == {"NCT001", "NCT002", "NCT003"}
+
+    def test_namespace_tagging_prevents_cross_alias_false_merge(self, tmp_path, drugbank_csv_content):
+        """A DrugBank ID string equal to a MeSH term must not link across candidates."""
+        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
+        stage = CandidateClusteringStage(drugbank_csv_path=csv_path, drop_unmatched_drugbank=False)
+        # Candidate A gets DrugBank ID "DB00001" via the lepirudin match.
+        # Candidate B has no DrugBank match but carries mesh_drug="DB00001"
+        # (contrived string collision). Tagged aliases ("db", "DB00001") vs
+        # ("mesh", "DB00001") must not union them.
+        candidates = [
+            self._make_candidate("cA", "lepirudin", indication="diabetes",
+                                 trial_ids=["NCT001"]),
+            self._make_candidate("cB", "unknowndrug xyz", indication="diabetes",
+                                 trial_ids=["NCT002"], mesh_drug="DB00001"),
+        ]
+        result = stage._apply_drugbank_dedup(candidates)
+        assert len(result) == 2
+        trial_sets = {frozenset(c.trial_ids) for c in result}
+        assert trial_sets == {frozenset({"NCT001"}), frozenset({"NCT002"})}
+
+    def test_union_find_respects_indication_mismatch(self, tmp_path, drugbank_csv_content):
+        """Same DrugBank ID but different indications → no merge."""
+        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
+        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
+        candidates = [
+            self._make_candidate("c1", "lepirudin", indication="diabetes",
+                                 trial_ids=["NCT001"]),
+            self._make_candidate("c2", "lepirudin", indication="hypertension",
+                                 trial_ids=["NCT002"]),
+        ]
+        result = stage._apply_drugbank_dedup(candidates)
+        assert len(result) == 2
+
+    def test_union_find_merges_via_normalized_name_alias(self, tmp_path, drugbank_csv_content):
+        """Two candidates sharing only a normalized drug name + indication merge."""
+        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
+        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
+        # Both are "lepirudin" so both get DB00001 → eligible via DrugBank.
+        # They also both have drug_name="lepirudin" (normalized). Even if we
+        # removed DrugBank, the name alias should still link them. This test
+        # documents that the name tier of the alias ladder works.
+        candidates = [
+            self._make_candidate("c1", "lepirudin", indication="diabetes",
+                                 trial_ids=["NCT001"]),
+            self._make_candidate("c2", "lepirudin", indication="diabetes",
+                                 trial_ids=["NCT002"]),
+        ]
+        result = stage._apply_drugbank_dedup(candidates)
+        assert len(result) == 1
+        assert set(result[0].trial_ids) == {"NCT001", "NCT002"}

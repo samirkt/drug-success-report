@@ -73,6 +73,36 @@ def _pick_mesh_drug(trials: list) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Union-find (disjoint-set) for alias-based candidate merging
+# ---------------------------------------------------------------------------
+
+class UnionFind:
+    """Path-compressed union-find with union-by-size over integer indices."""
+
+    def __init__(self, n: int) -> None:
+        self.parent = list(range(n))
+        self.size = [1] * n
+
+    def find(self, x: int) -> int:
+        root = x
+        while self.parent[root] != root:
+            root = self.parent[root]
+        while self.parent[x] != root:
+            self.parent[x], x = root, self.parent[x]
+        return root
+
+    def union(self, a: int, b: int) -> bool:
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False
+        if self.size[ra] < self.size[rb]:
+            ra, rb = rb, ra
+        self.parent[rb] = ra
+        self.size[ra] += self.size[rb]
+        return True
+
+
+# ---------------------------------------------------------------------------
 # Strategy ABC and concrete implementations
 # ---------------------------------------------------------------------------
 
@@ -338,18 +368,53 @@ class CandidateClusteringStage:
         eligible = [c for c in candidates if c.drugbank_id is not None or c.mesh_drug is not None]
         unmatched = [c for c in candidates if c.drugbank_id is None and c.mesh_drug is None]
 
-        groups: dict[tuple[str, str], list[Candidate]] = {}
-        for candidate in eligible:
-            drug_key = candidate.drugbank_id or candidate.mesh_drug or candidate.drug_name
-            indication_key = candidate.mesh_indication or candidate.indication
-            key = (drug_key, indication_key)
-            groups.setdefault(key, []).append(candidate)
+        # Union-find over (drug_alias, indication_alias) signatures. Two
+        # candidates are merged if they agree on ANY drug alias AND ANY
+        # indication alias, drawn from the tagged sets below. Tagging
+        # prevents cross-namespace collisions (e.g., a DrugBank ID equal to
+        # a MeSH term string would otherwise falsely merge).
+        uf = UnionFind(len(eligible))
+        sig_to_indices: dict[tuple, list[int]] = {}
+        for idx, c in enumerate(eligible):
+            drug_aliases = [t for t in (
+                ("db", c.drugbank_id),
+                ("mesh", c.mesh_drug),
+                ("name", c.drug_name),
+            ) if t[1]]
+            indication_aliases = [t for t in (
+                ("mesh_ind", c.mesh_indication),
+                ("name_ind", c.indication),
+            ) if t[1]]
+            for d in drug_aliases:
+                for i in indication_aliases:
+                    sig_to_indices.setdefault((d, i), []).append(idx)
+
+        n_unions = 0
+        for indices in sig_to_indices.values():
+            if len(indices) < 2:
+                continue
+            anchor = indices[0]
+            for other in indices[1:]:
+                if uf.union(anchor, other):
+                    n_unions += 1
+
+        components: dict[int, list[Candidate]] = {}
+        for idx, c in enumerate(eligible):
+            components.setdefault(uf.find(idx), []).append(c)
 
         deduped = [
             self._merge_candidates(group) if len(group) > 1 else group[0]
-            for group in groups.values()
+            for group in components.values()
         ]
         candidates_after = len(deduped) + (0 if self.drop_unmatched_drugbank else len(unmatched))
+        mean_component_size = (
+            len(eligible) / len(components) if components else 0.0
+        )
+        logger.info(
+            "Union-find dedup: %d eligible candidates → %d components "
+            "(%d unions applied, mean component size %.2f)",
+            len(eligible), len(components), n_unions, mean_component_size,
+        )
 
         self._report_coverage(
             total_trials=total_trials,

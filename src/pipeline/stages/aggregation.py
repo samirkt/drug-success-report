@@ -30,6 +30,7 @@ Transitions computed:
 """
 
 from collections import defaultdict
+from datetime import date
 
 from ..models import (
     AttributeTable,
@@ -59,14 +60,47 @@ _PHASE_ORDER: dict[str, int] = {
 }
 
 # Trial statuses that count as terminal observation of a phase. A phase is
-# considered "observed" for cohort purposes only if at least one of the
-# candidate's trials at that phase has reached one of these statuses.
+# considered "observed" for cohort purposes when a trial at that phase has
+# reached one of these statuses.
 _TERMINAL_TRIAL_STATUSES: frozenset[TrialStatus] = frozenset({
     TrialStatus.COMPLETED,
     TrialStatus.TERMINATED,
     TrialStatus.WITHDRAWN,
     TrialStatus.SUSPENDED,
 })
+
+# Non-terminal trial statuses that may be promoted to "effectively terminal"
+# once the trial's latest activity date is older than the stale-trial cutoff.
+# Addresses pre-FDAAA-2007 records whose status field was never updated.
+_STALE_STATUS_CANDIDATES: frozenset[TrialStatus] = frozenset({
+    TrialStatus.UNKNOWN,
+    TrialStatus.ACTIVE_NOT_RECRUITING,
+    TrialStatus.RECRUITING,
+})
+
+
+def _is_effectively_terminal(
+    status: TrialStatus,
+    start_date: date | None,
+    completion_date: date | None,
+    reference_date: date,
+    stale_cutoff_years: float,
+) -> bool:
+    """Return True if a trial should contribute to cohort-membership at its phase.
+
+    True when status is terminal, or when status is a stale-promotion candidate
+    (Unknown / Active not recruiting / Recruiting) and the latest available
+    activity date (completion_date else start_date) is at least
+    `stale_cutoff_years` in the past relative to `reference_date`.
+    """
+    if status in _TERMINAL_TRIAL_STATUSES:
+        return True
+    if status not in _STALE_STATUS_CANDIDATES:
+        return False
+    latest = completion_date or start_date
+    if latest is None:
+        return False
+    return (reference_date - latest).days >= stale_cutoff_years * 365.25
 
 
 class FunnelAggregationStage:
@@ -76,6 +110,27 @@ class FunnelAggregationStage:
     Inputs:  CandidateTable, AttributeTable, OutcomeTable, TrialTable
     Outputs: FunnelResults
     """
+
+    def __init__(
+        self,
+        reference_date: date | None = None,
+        stale_cutoff_years: float = 3.0,
+    ) -> None:
+        """
+        Args:
+            reference_date:
+                Anchor date against which trial staleness is measured.
+                `None` (default) resolves to `date.today()` at run time.
+            stale_cutoff_years:
+                A trial with a non-terminal status is promoted into the
+                cohort set when its latest activity date is at least this
+                many years before `reference_date`. Default 3.0.
+        """
+        self._reference_date = reference_date
+        self._stale_cutoff_years = stale_cutoff_years
+
+    def _resolved_reference_date(self) -> date:
+        return self._reference_date or date.today()
 
     def run(
         self,
@@ -135,6 +190,8 @@ class FunnelAggregationStage:
         candidate belongs to under strict forward-looking semantics.
         """
         trial_index = self._build_trial_index(trial_table)
+        reference_date = self._resolved_reference_date()
+        stale_cutoff_years = self._stale_cutoff_years
 
         records = []
         for c in candidate_table.candidates:
@@ -150,6 +207,8 @@ class FunnelAggregationStage:
                 outcome=outcome_value,
                 approval_date=approval_date,
                 commercialization_date=commercialization_date,
+                reference_date=reference_date,
+                stale_cutoff_years=stale_cutoff_years,
             )
 
             records.append({
@@ -169,27 +228,34 @@ class FunnelAggregationStage:
         return records
 
     @staticmethod
-    def _build_trial_index(trial_table: TrialTable | None) -> dict[str, tuple[str, TrialStatus]]:
-        """Map nct_id → (phase_value, status) for quick per-candidate lookup."""
+    def _build_trial_index(
+        trial_table: TrialTable | None,
+    ) -> dict[str, tuple[str, TrialStatus, date | None, date | None]]:
+        """Map nct_id → (phase_value, status, start_date, completion_date)."""
         if trial_table is None:
             return {}
         return {
-            t.nct_id: (t.phase.value, t.status)
+            t.nct_id: (t.phase.value, t.status, t.start_date, t.completion_date)
             for t in trial_table.trials
         }
 
     @staticmethod
     def _phases_observed(
         trial_ids: list[str],
-        trial_index: dict[str, tuple[str, TrialStatus]],
+        trial_index: dict[str, tuple[str, TrialStatus, date | None, date | None]],
         outcome: str | None,
         approval_date,
         commercialization_date,
+        reference_date: date,
+        stale_cutoff_years: float,
     ) -> tuple[set[str], set[str]]:
         """Return (cohort_phases, advancement_phases) for a candidate.
 
-        * cohort_phases require terminal evidence (trial terminal status,
-          adjudicator FAILED_PHASE_N, or approval/commercialization event).
+        * cohort_phases require terminal evidence: a trial at that phase with
+          a terminal status, or a stale non-terminal trial whose latest
+          activity date is at least `stale_cutoff_years` before
+          `reference_date`, or an adjudicator FAILED_PHASE_N verdict, or an
+          approval / commercialization event.
         * advancement_phases include cohort_phases plus any phase where a
           trial of any status exists — a started-but-not-terminal late-phase
           trial is enough to show the candidate advanced past earlier phases.
@@ -201,15 +267,19 @@ class FunnelAggregationStage:
             entry = trial_index.get(nct)
             if entry is None:
                 continue
-            phase_value, status = entry
+            phase_value, status, start_date, completion_date = entry
+            effectively_terminal = _is_effectively_terminal(
+                status, start_date, completion_date,
+                reference_date, stale_cutoff_years,
+            )
             if phase_value in _PHASE_ORDER:
                 advancement.add(phase_value)
-                if status in _TERMINAL_TRIAL_STATUSES:
+                if effectively_terminal:
                     cohort.add(phase_value)
             elif phase_value == "Phase 4":
                 # Post-marketing trials imply approval was reached.
                 advancement.add("Approval")
-                if status in _TERMINAL_TRIAL_STATUSES:
+                if effectively_terminal:
                     cohort.add("Approval")
 
         # FAILED_PHASE_N outcomes credit advancement only — a drug with a

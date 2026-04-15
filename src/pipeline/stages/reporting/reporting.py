@@ -7,6 +7,8 @@ package surface stays minimal and the stage class is easy to locate.
 
 from __future__ import annotations
 
+from datetime import date
+
 from ...models import (
     AttributeTable,
     CandidateTable,
@@ -35,11 +37,15 @@ class ReportingStage:
         formats: list[str] | None = None,
         peptide_only: bool = True,
         time_periods: list[tuple[int, int]] | None = None,
+        reference_date: date | None = None,
+        stale_cutoff_years: float = 3.0,
     ):
         self.output_path = output_path
         self.formats = formats or ["html"]
         self.peptide_only = peptide_only
         self.time_periods = time_periods
+        self.reference_date = reference_date
+        self.stale_cutoff_years = stale_cutoff_years
 
     def run(
         self,
@@ -58,6 +64,8 @@ class ReportingStage:
             peptide_only=self.peptide_only,
             time_periods=self.time_periods,
             trial_table=trial_table,
+            reference_date=self.reference_date,
+            stale_cutoff_years=self.stale_cutoff_years,
         )
 
         composer = ReportComposer()

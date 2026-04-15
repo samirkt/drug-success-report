@@ -77,6 +77,18 @@ _HARDCODED_ROW_FILTER_RULES: list[dict[str, Any]] = [
         "op": "contains",
         "value": "healthy",
         "case_sensitive": False,
+    },
+    {
+        "field": "intervention",
+        "op": "contains",
+        "value": "placebo",
+        "case_sensitive": False,
+    },
+    {
+        "field": "indication",
+        "op": "contains",
+        "value": "placebo",
+        "case_sensitive": False,
     }
 ]
 

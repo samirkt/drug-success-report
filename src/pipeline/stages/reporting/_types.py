@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -26,6 +27,8 @@ class ReportContext:
     peptide_only: bool
     time_periods: list[tuple[int, int]] | None
     trial_table: TrialTable | None = None
+    reference_date: date | None = None
+    stale_cutoff_years: float = 3.0
 
 
 @dataclass

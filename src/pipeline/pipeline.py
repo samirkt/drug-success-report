@@ -13,6 +13,7 @@ Builds and executes the full research pipeline:
 import concurrent.futures
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -78,6 +79,15 @@ class PipelineConfig:
     time_periods: list[tuple[int, int]] | None = field(
         default_factory=lambda: [(1962, 2000), (2000, 2006), (2007, 2024)]
     )
+
+    # Aggregation: cohort-promotion rule for stale-status trials.
+    # A trial with a non-terminal status (Unknown / Active not recruiting /
+    # Recruiting) is promoted into the cohort set when its latest activity
+    # date is at least `stale_trial_cutoff_years` before
+    # `aggregation_reference_date`. This compensates for pre-FDAAA-2007
+    # registry records whose status field was never updated.
+    aggregation_reference_date: Optional[date] = None  # None → date.today() at run time
+    stale_trial_cutoff_years: float = 3.0
 
 
 @dataclass
@@ -262,11 +272,16 @@ class Pipeline:
                 cache=cache,
                 ledger=self._ledger,
             ),
-            "aggregation": FunnelAggregationStage(),
+            "aggregation": FunnelAggregationStage(
+                reference_date=cfg.aggregation_reference_date,
+                stale_cutoff_years=cfg.stale_trial_cutoff_years,
+            ),
             "reporting": ReportingStage(
                 output_path=cfg.report_output_path,
                 formats=cfg.report_formats,
                 peptide_only=cfg.peptide_only_report,
                 time_periods=cfg.time_periods,
+                reference_date=cfg.aggregation_reference_date,
+                stale_cutoff_years=cfg.stale_trial_cutoff_years,
             ),
         }

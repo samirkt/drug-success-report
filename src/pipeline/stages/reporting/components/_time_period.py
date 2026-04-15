@@ -29,6 +29,8 @@ def _build_candidate_records(
     attribute_table: AttributeTable,
     outcome_table: OutcomeTable,
     trial_table: TrialTable | None = None,
+    reference_date=None,
+    stale_cutoff_years: float = 3.0,
 ) -> tuple[list[dict], int]:
     """Flatten candidates into records carrying `phases_observed`/`phases_advanced`.
 
@@ -36,7 +38,11 @@ def _build_candidate_records(
     same cohort-definition logic as the overall funnel — the reporting
     stage must not re-derive transition-rate inputs.
     """
-    joined = FunnelAggregationStage()._join(
+    stage = FunnelAggregationStage(
+        reference_date=reference_date,
+        stale_cutoff_years=stale_cutoff_years,
+    )
+    joined = stage._join(
         candidate_table, attribute_table, outcome_table, trial_table,
     )
     by_id = {r["candidate_id"]: r for r in joined}
@@ -80,6 +86,8 @@ def partition_by_time_periods(
     outcome_table: OutcomeTable,
     periods: list[tuple[int, int]] | None = None,
     trial_table: TrialTable | None = None,
+    reference_date=None,
+    stale_cutoff_years: float = 3.0,
 ) -> tuple[dict[str, dict[str, FunnelSlice]], list[str], int]:
     """Split candidates into time-period cohorts and compute per-disease funnels.
 
@@ -92,6 +100,7 @@ def partition_by_time_periods(
     """
     records, n_excluded = _build_candidate_records(
         candidate_table, attribute_table, outcome_table, trial_table,
+        reference_date=reference_date, stale_cutoff_years=stale_cutoff_years,
     )
     if not records:
         return {}, [], n_excluded
@@ -116,6 +125,8 @@ def period_overall_slices(
     outcome_table: OutcomeTable,
     periods: list[tuple[int, int]] | None = None,
     trial_table: TrialTable | None = None,
+    reference_date=None,
+    stale_cutoff_years: float = 3.0,
 ) -> tuple[dict[str, FunnelSlice], list[str], int]:
     """Compute one aggregate FunnelSlice per time period (across all disease areas).
 
@@ -124,6 +135,7 @@ def period_overall_slices(
     """
     records, n_excluded = _build_candidate_records(
         candidate_table, attribute_table, outcome_table, trial_table,
+        reference_date=reference_date, stale_cutoff_years=stale_cutoff_years,
     )
     if not records:
         return {}, [], n_excluded
@@ -356,6 +368,8 @@ class TimePeriodComponent:
         period_slices, period_labels, n_excluded = partition_by_time_periods(
             ctx.candidate_table, ctx.attribute_table, ctx.outcome_table,
             periods=ctx.time_periods, trial_table=ctx.trial_table,
+            reference_date=ctx.reference_date,
+            stale_cutoff_years=ctx.stale_cutoff_years,
         )
         if not period_labels:
             return ComponentResult()
@@ -369,6 +383,8 @@ class TimePeriodComponent:
         period_overall, _, _ = period_overall_slices(
             ctx.candidate_table, ctx.attribute_table, ctx.outcome_table,
             periods=ctx.time_periods, trial_table=ctx.trial_table,
+            reference_date=ctx.reference_date,
+            stale_cutoff_years=ctx.stale_cutoff_years,
         )
 
         return ComponentResult(
