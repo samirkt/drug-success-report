@@ -28,7 +28,8 @@ class ReportContext:
     time_periods: list[tuple[int, int]] | None
     trial_table: TrialTable | None = None
     reference_date: date | None = None
-    stale_cutoff_years: float = 3.0
+    stale_cutoff_years: float = 2.0
+    back_propagate_approval: bool = True
 
 
 @dataclass

@@ -22,6 +22,7 @@ Cap safeguard:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import psycopg
@@ -71,11 +72,20 @@ _STATUS_MAP: dict[str, TrialStatus] = {
 }
 
 # Hardcoded row-level exclusion rules applied during ingestion.
+# The healthy-volunteer rule uses a word-boundary regex so that legitimate
+# patient trials whose indication text happens to contain the substring
+# "healthy" (e.g. "oncology patients with healthy controls") are retained.
+_HEALTHY_VOLUNTEER_PATTERN = (
+    r"^\s*healthy\s*$"
+    r"|\bhealthy\s+(?:volunteers?|subjects?|controls?|participants?|adults?|individuals?|males?|females?|men|women)\b"
+    r"|\bhealthy\s+human\b"
+)
+
 _HARDCODED_ROW_FILTER_RULES: list[dict[str, Any]] = [
     {
         "field": "indication",
-        "op": "contains",
-        "value": "healthy",
+        "op": "regex",
+        "value": _HEALTHY_VOLUNTEER_PATTERN,
         "case_sensitive": False,
     },
     {
@@ -273,6 +283,16 @@ class TrialIngestionStage:
 
         if op == "contains":
             return value_str in candidate_str
+
+        if op == "regex":
+            flags = 0 if case_sensitive else re.IGNORECASE
+            try:
+                return re.search(value_str, candidate_str, flags) is not None
+            except re.error as exc:
+                logger.warning(
+                    "Invalid regex pattern %r for field=%r: %s", value_str, field, exc,
+                )
+                return False
 
         logger.warning("Unsupported row filter op=%r for field=%r; skipping rule.", op, field)
         return False

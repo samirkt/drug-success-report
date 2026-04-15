@@ -74,8 +74,10 @@ class TestPipelineConfig:
         assert config.report_formats == ["html"]
 
     def test_default_drop_unmatched_drugbank(self):
+        # ClinSR-aligned default: retain candidates lacking DrugBank / MeSH
+        # rather than silently dropping them.
         config = PipelineConfig()
-        assert config.drop_unmatched_drugbank is True
+        assert config.drop_unmatched_drugbank is False
 
     def test_custom_values(self):
         config = PipelineConfig(

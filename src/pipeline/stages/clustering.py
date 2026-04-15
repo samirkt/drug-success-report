@@ -189,6 +189,7 @@ class CandidateClusteringStage:
         llm_adjudicate: bool = True,
         drugbank_csv_path: Optional[Path] = None,
         drop_unmatched_drugbank: bool = True,
+        drugbank_synonyms_csv_path: Optional[Path] = None,
     ):
         """
         Args:
@@ -198,11 +199,20 @@ class CandidateClusteringStage:
             drop_unmatched_drugbank:
                                   when True, candidates without a DrugBank or drug MeSH match
                                   are removed; when False, unmatched candidates are retained
+            drugbank_synonyms_csv_path:
+                                  path to drugbank_synonyms.csv (produced by
+                                  `scripts/build_drugbank_derivatives.py`). When provided,
+                                  clustering uses the synonym reverse-map as a third-level
+                                  fallback during DrugBank ID lookup and emits an extra
+                                  ("syn", norm) alias tier in the union-find pass so
+                                  codename-only and INN-only candidate rows for the same
+                                  drug-indication program are merged.
         """
         self.method = method
         self.llm_adjudicate = llm_adjudicate
         self.drugbank_csv_path = drugbank_csv_path
         self.drop_unmatched_drugbank = drop_unmatched_drugbank
+        self.drugbank_synonyms_csv_path = drugbank_synonyms_csv_path
 
     def run(self, trial_table: TrialTable) -> CandidateTable:
         """Cluster trials into candidates. Returns a populated CandidateTable."""
@@ -297,11 +307,25 @@ class CandidateClusteringStage:
         if self.drugbank_csv_path is None:
             return candidates
 
-        from ..drugbank_norm import canonicalize_drug_name, load_drugbank_lookup
+        from ..drugbank_norm import (
+            canonicalize_drug_name,
+            load_drugbank_lookup,
+            load_drugbank_synonyms,
+        )
         _, best_rows_norm = load_drugbank_lookup(self.drugbank_csv_path)
         norm_to_drug_id = dict(
             zip(best_rows_norm["query_norm"].astype(str), best_rows_norm["drug_id"].astype(str))
         )
+
+        # Optional synonym reverse-map from the DrugBank XML export.
+        # synonym_forward:  drugbank_id -> [synonym_norm, ...]
+        # synonym_reverse:  synonym_norm -> drugbank_id
+        synonym_forward: dict[str, list[str]] = {}
+        synonym_reverse: dict[str, str] = {}
+        if self.drugbank_synonyms_csv_path is not None:
+            synonym_forward, synonym_reverse = load_drugbank_synonyms(
+                self.drugbank_synonyms_csv_path,
+            )
 
         # Matching dominates stage runtime on large candidate sets.
         # Use thread-level parallelism with O(1) dictionary lookups.
@@ -313,7 +337,13 @@ class CandidateClusteringStage:
             if exact is not None:
                 return exact
             first_word = norm.split(maxsplit=1)[0]
-            return norm_to_drug_id.get(first_word)
+            hit = norm_to_drug_id.get(first_word)
+            if hit is not None:
+                return hit
+            # Third-level fallback: look up in the synonym reverse map, so
+            # codename-only candidate rows (e.g. "BMS-986156") resolve to
+            # the INN's DrugBank ID (e.g. vopratelimab → DB99999).
+            return synonym_reverse.get(norm)
 
         names = [c.drug_name_raw or c.drug_name for c in candidates]
         workers = min(32, (os.cpu_count() or 1))
@@ -381,6 +411,14 @@ class CandidateClusteringStage:
                 ("mesh", c.mesh_drug),
                 ("name", c.drug_name),
             ) if t[1]]
+            # Synonym alias tier: if this candidate's DrugBank ID appears in
+            # the synonym forward map, every synonym of that DrugBank ID
+            # becomes a matching key. This unifies a pair where one member
+            # is named by an INN and the other by a codename or brand —
+            # cases the canonical name/MeSH matches would otherwise miss.
+            if c.drugbank_id and synonym_forward:
+                for syn in synonym_forward.get(c.drugbank_id, ()):
+                    drug_aliases.append(("syn", syn))
             indication_aliases = [t for t in (
                 ("mesh_ind", c.mesh_indication),
                 ("name_ind", c.indication),

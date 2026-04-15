@@ -150,6 +150,53 @@ class TestRowFilterRules:
         assert len(kept_rows) == 1
         assert kept_rows[0]["nct_id"] == "NCT2"
 
+    def test_regex_op_matches_healthy_volunteer_pattern(self):
+        from pipeline.stages.ingestion import _HEALTHY_VOLUNTEER_PATTERN
+        stage = TrialIngestionStage()
+        rule = {
+            "field": "indication",
+            "op": "regex",
+            "value": _HEALTHY_VOLUNTEER_PATTERN,
+            "case_sensitive": False,
+        }
+        # Positive cases — should be excluded.
+        for text in [
+            "Healthy Volunteers",
+            "healthy subjects",
+            "Study in Healthy Adults",
+            "Healthy",
+            "  healthy  ",
+            "Healthy Human Males",
+        ]:
+            assert stage._row_matches_rule({"indication": text}, rule) is True, text
+        # Negative cases — should NOT be excluded. AACT's M×N expansion
+        # yields one condition per row, so these represent realistic
+        # disease-indication strings that happen to contain the substring
+        # "healthy" but are not healthy-volunteer trials.
+        for text in [
+            "Maintenance of Healthy Weight in Type 2 Diabetes",
+            "Unhealthy Lifestyle-Associated Cardiovascular Disease",
+            "Promotion of Healthy Aging in Alzheimer's Disease",
+            "Heart Disease",
+        ]:
+            assert stage._row_matches_rule({"indication": text}, rule) is False, text
+
+    def test_regex_op_default_hardcoded_rule_excludes_healthy_volunteers(self):
+        """The default _HARDCODED_ROW_FILTER_RULES regex rule fires on
+        canonical healthy-volunteer indication strings but retains patient
+        trials whose indication merely mentions the word 'healthy'."""
+        from pipeline.stages.ingestion import _HARDCODED_ROW_FILTER_RULES
+        stage = TrialIngestionStage()
+        rows = [
+            {"nct_id": "NCT1", "indication": "Healthy Volunteers", "intervention": "drugA"},
+            {"nct_id": "NCT2", "indication": "Maintenance of Healthy Weight in Diabetes", "intervention": "drugB"},
+            {"nct_id": "NCT3", "indication": "Type 2 Diabetes", "intervention": "drugC"},
+        ]
+        kept, dropped = stage._apply_row_filter_rules(rows, _HARDCODED_ROW_FILTER_RULES)
+        assert dropped == 1
+        kept_ids = {r["nct_id"] for r in kept}
+        assert kept_ids == {"NCT2", "NCT3"}
+
 
 # ---------------------------------------------------------------------------
 # run() raises when the api source stub is used  (PASS NOW)

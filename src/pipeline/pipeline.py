@@ -57,6 +57,15 @@ class PipelineConfig:
 
     # Adjudication
     use_regulatory_data: bool = True
+    # Path to the DrugBank-derived products CSV used for deterministic
+    # approval grounding. Built once by
+    # `src/scripts/build_drugbank_derivatives.py` from the DrugBank full
+    # XML export. If the file is missing, the regulatory index is empty
+    # and adjudication falls back to LLM-only verdicts.
+    regulatory_products_csv: Path = Path("data/drugbank_products.csv")
+    # Path to the DrugBank-derived synonyms CSV used for codename↔INN
+    # recovery during clustering. Built by the same script.
+    drugbank_synonyms_csv: Path = Path("data/drugbank_synonyms.csv")
 
     # Knowledge cache
     cache_path: str | None = "knowledge_cache.db"
@@ -67,7 +76,11 @@ class PipelineConfig:
 
     # DrugBank normalization / deduplication
     drugbank_csv_path: Optional[Path] = None
-    drop_unmatched_drugbank: bool = True
+    # ClinSR-aligned default: retain candidates that lack a DrugBank match
+    # and lack a MeSH intervention term so that novel biologics, early
+    # peptides, and codename-only compounds are not silently dropped from
+    # the analysis. Flip to True to restore the stricter legacy behavior.
+    drop_unmatched_drugbank: bool = False
 
     # Reporting
     report_output_path: str | None = None
@@ -76,8 +89,16 @@ class PipelineConfig:
     # Time-period cohorts for the multi-period LOA comparison.
     # None = auto-split (historical vs. last decade, or median if all recent).
     # Override with e.g. [(2005, 2014), (2015, 2024)].
+    # The trailing (2015, 2023) cohort matches ClinSR's headline 9-year
+    # rolling window (Zhou et al., Nat Commun 16:9537, 2025) and enables a
+    # direct apples-to-apples comparison against their ~5% LOA figure.
     time_periods: list[tuple[int, int]] | None = field(
-        default_factory=lambda: [(1962, 2000), (2000, 2006), (2007, 2024)]
+        default_factory=lambda: [
+            (1962, 2000),
+            (2000, 2006),
+            (2007, 2024),
+            (2015, 2023),  # ClinSR-comparable 9-year rolling window
+        ]
     )
 
     # Aggregation: cohort-promotion rule for stale-status trials.
@@ -85,9 +106,17 @@ class PipelineConfig:
     # Recruiting) is promoted into the cohort set when its latest activity
     # date is at least `stale_trial_cutoff_years` before
     # `aggregation_reference_date`. This compensates for pre-FDAAA-2007
-    # registry records whose status field was never updated.
+    # registry records whose status field was never updated. Aligned with
+    # ClinSR's 2-year Trial Failure Threshold (Zhou et al., Nat Commun
+    # 16:9537, 2025).
     aggregation_reference_date: Optional[date] = None  # None → date.today() at run time
-    stale_trial_cutoff_years: float = 3.0
+    stale_trial_cutoff_years: float = 2.0
+    # When True (ClinSR-aligned default), approved / commercialized
+    # candidates are credited as having reached Phase 1, Phase 2, and
+    # Phase 3 in `phases_observed` even if no trial record survives for
+    # those phases. Set to False to preserve strict forward-looking
+    # semantics (no back-propagation).
+    back_propagate_approval: bool = True
 
 
 @dataclass
@@ -248,6 +277,11 @@ class Pipeline:
             from .aact_cache import AACTCache
             ct_cache = AACTCache(cfg.ct_cache_path)
 
+        regulatory_index = None
+        if cfg.use_regulatory_data:
+            from .regulatory import RegulatoryIndex
+            regulatory_index = RegulatoryIndex.from_csv(cfg.regulatory_products_csv)
+
         return {
             "ingestion": TrialIngestionStage(
                 source=cfg.data_source,
@@ -261,6 +295,7 @@ class Pipeline:
                 llm_adjudicate=cfg.llm_adjudicate_clusters,
                 drugbank_csv_path=cfg.drugbank_csv_path,
                 drop_unmatched_drugbank=cfg.drop_unmatched_drugbank,
+                drugbank_synonyms_csv_path=cfg.drugbank_synonyms_csv,
             ),
             "classification": AttributeClassificationStage(
                 use_literature=cfg.use_literature_lookup,
@@ -271,10 +306,12 @@ class Pipeline:
                 use_regulatory_data=cfg.use_regulatory_data,
                 cache=cache,
                 ledger=self._ledger,
+                regulatory_index=regulatory_index,
             ),
             "aggregation": FunnelAggregationStage(
                 reference_date=cfg.aggregation_reference_date,
                 stale_cutoff_years=cfg.stale_trial_cutoff_years,
+                back_propagate_approval=cfg.back_propagate_approval,
             ),
             "reporting": ReportingStage(
                 output_path=cfg.report_output_path,
@@ -283,5 +320,6 @@ class Pipeline:
                 time_periods=cfg.time_periods,
                 reference_date=cfg.aggregation_reference_date,
                 stale_cutoff_years=cfg.stale_trial_cutoff_years,
+                back_propagate_approval=cfg.back_propagate_approval,
             ),
         }

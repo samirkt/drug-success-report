@@ -38,7 +38,8 @@ class ReportingStage:
         peptide_only: bool = True,
         time_periods: list[tuple[int, int]] | None = None,
         reference_date: date | None = None,
-        stale_cutoff_years: float = 3.0,
+        stale_cutoff_years: float = 2.0,
+        back_propagate_approval: bool = True,
     ):
         self.output_path = output_path
         self.formats = formats or ["html"]
@@ -46,6 +47,7 @@ class ReportingStage:
         self.time_periods = time_periods
         self.reference_date = reference_date
         self.stale_cutoff_years = stale_cutoff_years
+        self.back_propagate_approval = back_propagate_approval
 
     def run(
         self,
@@ -66,6 +68,7 @@ class ReportingStage:
             trial_table=trial_table,
             reference_date=self.reference_date,
             stale_cutoff_years=self.stale_cutoff_years,
+            back_propagate_approval=self.back_propagate_approval,
         )
 
         composer = ReportComposer()

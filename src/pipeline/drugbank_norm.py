@@ -121,20 +121,60 @@ def load_drugbank_lookup(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     return best_rows, best_rows_norm
 
 
+def load_drugbank_synonyms(
+    csv_path: Path,
+) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Load `data/drugbank_synonyms.csv` and build two lookup maps.
+
+    The synonyms CSV is produced by `scripts/build_drugbank_derivatives.py`
+    from the DrugBank full XML. Rows are `(drugbank_id, synonym_norm, kind)`.
+
+    Returns:
+        forward:  drugbank_id -> deduplicated list of normalized synonyms
+        reverse:  synonym_norm -> drugbank_id (first writer wins on collision)
+
+    If the file does not exist, both maps are returned empty so downstream
+    code can fall back to the legacy canonical-name path.
+    """
+    if not csv_path.exists():
+        return {}, {}
+
+    df = pd.read_csv(csv_path, low_memory=False, dtype="string")
+    forward: dict[str, list[str]] = {}
+    reverse: dict[str, str] = {}
+    for db_id, norm in zip(df["drugbank_id"], df["synonym_norm"]):
+        if not db_id or not norm or pd.isna(db_id) or pd.isna(norm):
+            continue
+        db_id = str(db_id)
+        norm = str(norm)
+        bucket = forward.setdefault(db_id, [])
+        if norm not in bucket:
+            bucket.append(norm)
+        if norm not in reverse:
+            reverse[norm] = db_id
+    return forward, reverse
+
+
 def match_drug_name(
     drug_name: str,
     best_rows: pd.DataFrame,
     best_rows_norm: pd.DataFrame,
+    synonym_reverse: Optional[dict[str, str]] = None,
 ) -> Optional[str]:
-    """Two-level lookup: exact canonical match, then first-word fallback.
+    """Three-level lookup: exact canonical, then first-word, then synonym.
 
     Args:
-        drug_name:      the drug name to look up (e.g. "Lepirudin (rDNA origin) HCl")
-        best_rows:      DataFrame deduped by query_name
-        best_rows_norm: DataFrame deduped by query_norm; primary lookup target
+        drug_name:        the drug name to look up
+        best_rows:        DataFrame deduped by query_name
+        best_rows_norm:   DataFrame deduped by query_norm; primary lookup target
+        synonym_reverse:  optional synonym_norm -> drugbank_id map; used when
+                          the name is neither a canonical DrugBank query_norm
+                          nor a first-word prefix of one (e.g. codename-only
+                          rows whose INN is in DrugBank under a different
+                          canonical name).
 
     Returns:
-        drug_id string or None if no match found
+        drug_id string or None if no match found.
     """
     norm = canonicalize_drug_name(drug_name)
 
@@ -151,5 +191,11 @@ def match_drug_name(
     fallback = best_rows_norm[best_rows_norm["query_norm"] == first_word]
     if not fallback.empty:
         return str(fallback.iloc[0]["drug_id"])
+
+    # Level 3: synonym reverse-map (codename <-> INN recovery)
+    if synonym_reverse:
+        hit = synonym_reverse.get(norm)
+        if hit:
+            return str(hit)
 
     return None

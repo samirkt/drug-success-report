@@ -685,3 +685,90 @@ class TestApplyDrugbankDedup:
         result = stage._apply_drugbank_dedup(candidates)
         assert len(result) == 1
         assert set(result[0].trial_ids) == {"NCT001", "NCT002"}
+
+
+# ---------------------------------------------------------------------------
+# Synonym alias tier (Fix #3) — codename↔INN recovery via DrugBank synonyms
+# ---------------------------------------------------------------------------
+
+
+class TestSynonymAliasTier:
+    def _make_trial(self, nct_id, intervention, indication="diabetes", phase=TrialPhase.PHASE_1):
+        return RawTrial(
+            nct_id=nct_id, title="Title", intervention=intervention,
+            indication=indication, sponsor="Co",
+            phase=phase, status=TrialStatus.COMPLETED,
+        )
+
+    def _make_candidate(self, cid, drug_name_raw, indication="diabetes",
+                        phase=TrialPhase.PHASE_1, trial_ids=None, mesh_drug=None):
+        return Candidate(
+            candidate_id=cid,
+            drug_name=drug_name_raw.lower(),
+            indication=indication,
+            drug_name_raw=drug_name_raw,
+            trial_ids=trial_ids or [cid],
+            highest_phase=phase,
+            sponsors=["Co"],
+            mesh_drug=mesh_drug,
+        )
+
+    def _write_drugbank_csv(self, tmp_path):
+        p = tmp_path / "drugbank_approvals.csv"
+        p.write_text(
+            "drug_id,query_name,query_norm,modality\n"
+            "DB00002,vopratelimab,vopratelimab,monoclonal antibody\n"
+        )
+        return p
+
+    def _write_synonyms_csv(self, tmp_path):
+        p = tmp_path / "drugbank_synonyms.csv"
+        p.write_text(
+            "drugbank_id,synonym_norm,kind\n"
+            "DB00002,vopratelimab,primary_name\n"
+            "DB00002,bms 986156,synonym\n"
+        )
+        return p
+
+    def test_codename_and_inn_candidates_merge_via_synonym(self, tmp_path):
+        """A candidate named by company codename (BMS-986156) and a candidate
+        named by the INN (Vopratelimab) for the same indication should merge
+        once the DrugBank synonym map is provided."""
+        db_csv = self._write_drugbank_csv(tmp_path)
+        syn_csv = self._write_synonyms_csv(tmp_path)
+        stage = CandidateClusteringStage(
+            drugbank_csv_path=db_csv,
+            drugbank_synonyms_csv_path=syn_csv,
+        )
+        candidates = [
+            self._make_candidate("c1", "BMS-986156", indication="oncology",
+                                 phase=TrialPhase.PHASE_1, trial_ids=["NCT001"]),
+            self._make_candidate("c2", "Vopratelimab", indication="oncology",
+                                 phase=TrialPhase.PHASE_2, trial_ids=["NCT002"]),
+        ]
+        result = stage._apply_drugbank_dedup(candidates)
+        assert len(result) == 1
+        merged = result[0]
+        assert merged.drugbank_id == "DB00002"
+        assert set(merged.trial_ids) == {"NCT001", "NCT002"}
+        # Highest phase across merged candidates wins.
+        assert merged.highest_phase == TrialPhase.PHASE_2
+
+    def test_without_synonym_csv_codename_and_inn_do_not_merge(self, tmp_path):
+        """Regression: without the synonyms CSV, the legacy behavior is
+        preserved — codename-only rows stay separate from INN rows."""
+        db_csv = self._write_drugbank_csv(tmp_path)
+        stage = CandidateClusteringStage(
+            drugbank_csv_path=db_csv,
+            drugbank_synonyms_csv_path=None,
+            drop_unmatched_drugbank=False,  # keep the codename candidate alive
+        )
+        candidates = [
+            self._make_candidate("c1", "BMS-986156", indication="oncology",
+                                 phase=TrialPhase.PHASE_1, trial_ids=["NCT001"]),
+            self._make_candidate("c2", "Vopratelimab", indication="oncology",
+                                 phase=TrialPhase.PHASE_2, trial_ids=["NCT002"]),
+        ]
+        result = stage._apply_drugbank_dedup(candidates)
+        # No synonym map → codename candidate is orphaned from the INN.
+        assert len(result) == 2

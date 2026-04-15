@@ -672,11 +672,15 @@ class TestJoinPhasesObserved:
         assert "Phase 2" in records[0]["phases_advanced"]
 
     def test_approved_outcome_does_not_backfill_clinical_phases(self):
-        """APPROVED outcome without trial data stays out of P1/P2/P3 clinical cohorts."""
+        """With back-propagation disabled, APPROVED outcome without trial
+        data stays out of P1/P2/P3 clinical cohorts (strict forward-looking
+        semantics)."""
         triples = [_build("c1", [], outcome=CandidateOutcome.APPROVED,
                           approval_date=date(2020, 1, 1))]
         ct, at, ot, tt = _tables(triples, [])
-        records = FunnelAggregationStage()._join(ct, at, ot, tt)
+        records = FunnelAggregationStage(
+            back_propagate_approval=False,
+        )._join(ct, at, ot, tt)
         assert records[0]["phases_observed"] == {"Approval"}
         assert records[0]["phases_advanced"] == {"Approval"}
 
@@ -770,6 +774,22 @@ class TestJoinStaleStatusPromotion:
         ct, at, ot, tt = _tables(triples, trials)
         records = self._stage()._join(ct, at, ot, tt)
         assert "Phase 2" in records[0]["phases_observed"]
+
+    def test_two_year_default_promotes_trial_inactive_for_two_and_a_half_years(self):
+        """ClinSR-aligned 2y default: a trial with last activity 2.5y before the
+        reference date is promoted; a 3y default would also promote it, but a 3y
+        default would fail to promote a 2.5y-inactive trial when the cutoff is 3."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_1, status=TrialStatus.UNKNOWN,
+            start_date=date(2023, 7, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage(stale_cutoff_years=2.0)._join(ct, at, ot, tt)
+        assert "Phase 1" in records[0]["phases_observed"]
+        records_3y = self._stage(stale_cutoff_years=3.0)._join(ct, at, ot, tt)
+        assert "Phase 1" not in records_3y[0]["phases_observed"]
 
     def test_cutoff_of_zero_promotes_every_dated_non_terminal_trial(self):
         """stale_cutoff_years=0 → any trial with a past date gets promoted."""
@@ -895,3 +915,82 @@ class TestByModalityAndDisease:
         assert result.by_modality_and_disease[("biologic", "oncology")].candidate_count == 1
         # Only 1 peptide candidate in metabolic (c4)
         assert result.by_modality_and_disease[("peptide", "metabolic")].candidate_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Back-propagation of Approval into earlier phases (Fix #9)
+# ---------------------------------------------------------------------------
+
+
+class TestBackPropagateApproval:
+    """An Approved / Commercialized candidate with missing early-phase trial
+    records should still be credited as having reached P1/P2/P3 when the
+    `back_propagate_approval` flag is True (ClinSR-aligned default)."""
+
+    _REF = date(2026, 1, 1)
+
+    def _stage(self, back_propagate: bool = True) -> FunnelAggregationStage:
+        return FunnelAggregationStage(
+            reference_date=self._REF,
+            stale_cutoff_years=2.0,
+            back_propagate_approval=back_propagate,
+        )
+
+    def test_approved_candidate_populates_all_clinical_cohorts(self):
+        """A candidate with only a Phase 3 trial but an APPROVED outcome
+        should appear in the Phase 1, Phase 2, and Phase 3 cohorts."""
+        triples = [_build("c1", ["N1"], outcome=CandidateOutcome.APPROVED)]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_3, status=TrialStatus.COMPLETED,
+            start_date=date(2015, 1, 1), completion_date=date(2020, 6, 1),
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        observed = records[0]["phases_observed"]
+        assert "Phase 1" in observed
+        assert "Phase 2" in observed
+        assert "Phase 3" in observed
+        assert "Approval" in observed
+
+    def test_commercialized_candidate_also_back_propagates(self):
+        triples = [_build("c1", ["N1"], outcome=CandidateOutcome.COMMERCIALIZED)]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_3, status=TrialStatus.COMPLETED,
+            start_date=date(2018, 1, 1), completion_date=date(2022, 1, 1),
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        observed = records[0]["phases_observed"]
+        assert {"Phase 1", "Phase 2", "Phase 3", "Approval", "Market"} <= observed
+
+    def test_back_propagate_disabled_preserves_strict_semantics(self):
+        triples = [_build("c1", ["N1"], outcome=CandidateOutcome.APPROVED)]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_3, status=TrialStatus.COMPLETED,
+            start_date=date(2015, 1, 1), completion_date=date(2020, 6, 1),
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage(back_propagate=False)._join(ct, at, ot, tt)
+        observed = records[0]["phases_observed"]
+        # Phase 1 / Phase 2 are absent because only Phase 3 was registered.
+        assert "Phase 1" not in observed
+        assert "Phase 2" not in observed
+        assert "Phase 3" in observed
+        assert "Approval" in observed
+
+    def test_unapproved_candidate_not_back_propagated(self):
+        """Back-propagation only fires on APPROVED / COMMERCIALIZED. A
+        candidate with outcome ONGOING remains untouched."""
+        triples = [_build("c1", ["N1"], outcome=CandidateOutcome.ONGOING)]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_3, status=TrialStatus.COMPLETED,
+            start_date=date(2020, 1, 1), completion_date=date(2024, 1, 1),
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        observed = records[0]["phases_observed"]
+        assert observed == {"Phase 3"}
