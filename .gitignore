@@ -4,3 +4,10 @@ __pycache__/
 knowledge_cache.db
 pipeline.log
 .pytest_cache/
+
+*.xlsx
+*.csv
+*.pdf
+*.db
+*.pkl
+docs/*
