@@ -31,6 +31,7 @@ Outcome resolution (per Candidate):
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
@@ -89,7 +90,15 @@ class AdjudicationStage:
 
     def run(self, candidates: CandidateTable) -> OutcomeTable:
         table = OutcomeTable()
-        for candidate in candidates.candidates:
+        n = len(candidates.candidates)
+        llm = getattr(self.adjudicator, "llm", None)
+        hits_at_start = getattr(llm, "cache_hits", 0)
+        misses_at_start = getattr(llm, "cache_misses", 0)
+        run_start = time.monotonic()
+
+        logger.info("FDA adjudication: %d candidate(s) to process", n)
+        for i, candidate in enumerate(candidates.candidates, start=1):
+            c_start = time.monotonic()
             try:
                 record = self._adjudicate(candidate)
             except Exception as e:
@@ -99,8 +108,30 @@ class AdjudicationStage:
                     e,
                 )
                 record = self._error_record(candidate, str(e))
+            elapsed = time.monotonic() - c_start
+            logger.info(
+                "[%d/%d] %s | %s -> %s (%.1fs)",
+                i, n,
+                _truncate(candidate.drug_name, 30),
+                _truncate(candidate.indication, 40),
+                record.outcome.value,
+                elapsed,
+            )
             table.outcomes[record.candidate_id] = record
             self._cache_outcome(candidate, record)
+
+        total_elapsed = time.monotonic() - run_start
+        if llm is not None and hasattr(llm, "cache_hits"):
+            hits = llm.cache_hits - hits_at_start
+            misses = llm.cache_misses - misses_at_start
+            attempted = hits + misses
+            hit_pct = (100.0 * hits / attempted) if attempted else 0.0
+            logger.info(
+                "FDA adjudication complete in %.1fs. LLM cache: %d hit / %d miss (%.0f%% hit rate).",
+                total_elapsed, hits, misses, hit_pct,
+            )
+        else:
+            logger.info("FDA adjudication complete in %.1fs.", total_elapsed)
         return table
 
     def _cache_outcome(self, candidate: Candidate, record: CandidateOutcomeRecord) -> None:
@@ -321,3 +352,9 @@ def _append(
 
 def _normalize(s: str) -> str:
     return " ".join(s.lower().split())
+
+
+def _truncate(s: str, n: int) -> str:
+    if not s:
+        return ""
+    return s if len(s) <= n else s[: n - 1] + "…"

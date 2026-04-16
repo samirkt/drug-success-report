@@ -58,6 +58,8 @@ class OpenAICompatJSONClient:
         self.cache = cache
         self.ledger = ledger
         self.stage_label = stage_label
+        self.cache_hits = 0
+        self.cache_misses = 0
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -77,7 +79,9 @@ class OpenAICompatJSONClient:
             )
             cached = self.cache.get_llm_json(key)
             if cached is not None:
+                self.cache_hits += 1
                 return cached
+            self.cache_misses += 1
         else:
             key = None
 

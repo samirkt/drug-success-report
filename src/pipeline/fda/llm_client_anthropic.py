@@ -50,6 +50,8 @@ class AnthropicJSONClient:
         self.cache = cache
         self.ledger = ledger
         self.stage_label = stage_label
+        self.cache_hits = 0
+        self.cache_misses = 0
 
     def complete_json(self, system: str, user: str, schema: dict) -> dict:
         if self.cache is not None:
@@ -58,7 +60,9 @@ class AnthropicJSONClient:
             )
             cached = self.cache.get_llm_json(key)
             if cached is not None:
+                self.cache_hits += 1
                 return cached
+            self.cache_misses += 1
         else:
             key = None
 

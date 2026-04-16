@@ -196,6 +196,8 @@ class TestOpenAICompatCache:
 
         assert result == {"cached": True}
         assert http.calls == []
+        assert client.cache_hits == 1
+        assert client.cache_misses == 0
 
     def test_cache_miss_writes_result(self, tmp_path):
         cache = KnowledgeCache(tmp_path / "c.db")
@@ -214,6 +216,14 @@ class TestOpenAICompatCache:
             "qwen2.5:32b-instruct", "sys", "user", json.dumps(SAMPLE_SCHEMA, sort_keys=True)
         )
         assert cache.get_llm_json(key) == {"v": 42}
+        assert client.cache_hits == 0
+        assert client.cache_misses == 1
+
+        # Second identical call should now be a cache hit and skip HTTP.
+        client.complete_json("sys", "user", SAMPLE_SCHEMA)
+        assert client.cache_hits == 1
+        assert client.cache_misses == 1
+        assert len(http.calls) == 1
 
     def test_different_models_get_independent_cache_entries(self, tmp_path):
         cache = KnowledgeCache(tmp_path / "c.db")

@@ -35,6 +35,7 @@ from typing import Optional
 
 from .fda_client import Application, FDAClient, Submission
 from .llm_adjudicator import ExtractedIndication, IndicationAdjudicator, extract_pdf_text
+from .section_extract import extract_letter_indication_clause, narrow_label_indications
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +166,9 @@ class TimelineBuilder:
         label_text = self.fda.get_current_label_text(app.application_number)
         if not label_text:
             return []
+        narrowed = narrow_label_indications(label_text)
         return self.adjudicator.extract_from_text(
-            label_text, drug_name, source_kind="label"
+            narrowed, drug_name, source_kind="label"
         )
 
     def _extract_supplemental_indications(
@@ -187,8 +189,9 @@ class TimelineBuilder:
             return []
         if not text:
             return []
+        narrowed = extract_letter_indication_clause(text)
         return self.adjudicator.extract_from_text(
-            text, drug_name, source_kind="approval_letter"
+            narrowed, drug_name, source_kind="approval_letter"
         )
 
     def _reattribute_later_indications(
