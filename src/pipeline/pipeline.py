@@ -118,6 +118,14 @@ class PipelineConfig:
     # semantics (no back-propagation).
     back_propagate_approval: bool = True
 
+    # Global cohort filter. When set, candidates whose earliest trial start
+    # year falls outside [start, end] (inclusive) are dropped after
+    # clustering, before classification / adjudication / aggregation. This
+    # restricts the *entire* report — including all funnel slices, LOA
+    # charts, and per-period breakdowns — to the selected window, unlike
+    # `time_periods` which only drives the multi-period comparison chart.
+    candidate_year_range: Optional[tuple[int, int]] = None
+
 
 @dataclass
 class PipelineResult:
@@ -158,6 +166,7 @@ class Pipeline:
 
         logger.info("Stage 2/5 — Candidate Clustering")
         result.candidate_table = self._run_clustering(result.trial_table)
+        result.candidate_table = self._filter_by_year_range(result.candidate_table)
 
         logger.info("Stage 3/5 — Attribute Classification + Outcome Adjudication")
         result.attribute_table, result.outcome_table = self._run_parallel_stages(result.candidate_table)
@@ -193,6 +202,27 @@ class Pipeline:
 
     def _run_clustering(self, trial_table: TrialTable) -> CandidateTable:
         return self._stages["clustering"].run(trial_table)
+
+    def _filter_by_year_range(self, candidate_table: CandidateTable) -> CandidateTable:
+        """Drop candidates whose earliest trial start year is outside the configured window.
+
+        Candidates with no `earliest_start_date` are dropped — they carry no
+        temporal anchor to place them in a cohort.
+        """
+        window = self.config.candidate_year_range
+        if window is None:
+            return candidate_table
+        start_yr, end_yr = window
+        filtered = [
+            c for c in candidate_table.candidates
+            if c.earliest_start_date is not None
+            and start_yr <= c.earliest_start_date.year <= end_yr
+        ]
+        logger.info(
+            "Year-range filter [%d-%d]: %d / %d candidates retained",
+            start_yr, end_yr, len(filtered), len(candidate_table.candidates),
+        )
+        return CandidateTable(candidates=filtered)
 
     def _run_parallel_stages(
         self, candidate_table: CandidateTable

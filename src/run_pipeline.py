@@ -77,6 +77,14 @@ def parse_args() -> argparse.Namespace:
         help="Path to the AACT fetch cache file (only used when --use-ct-cache is set).",
     )
     parser.add_argument(
+        "--year-range",
+        default=None,
+        metavar="START-END",
+        help="Restrict the entire report to candidates whose earliest trial "
+             "started in [START, END] (inclusive), e.g. --year-range 2000-2008. "
+             "Candidates with no start date are dropped.",
+    )
+    parser.add_argument(
         "--benchmark",
         default=None,
         metavar="PATH",
@@ -95,6 +103,21 @@ def main() -> None:
         ingestion_filters["mesh_term"] = args.mesh
     cache_path = args.cache_path or None
     drugbank_csv_path = Path(args.drugbank_csv) if args.drugbank_csv else None
+
+    year_range = None
+    if args.year_range:
+        try:
+            start_s, end_s = args.year_range.split("-", 1)
+            year_range = (int(start_s), int(end_s))
+        except ValueError:
+            raise SystemExit(
+                f"Invalid --year-range '{args.year_range}'. Expected START-END, e.g. 2000-2008."
+            )
+        if year_range[0] > year_range[1]:
+            raise SystemExit(
+                f"Invalid --year-range '{args.year_range}': START must be <= END."
+            )
+
     config = PipelineConfig(
         data_source=args.source,
         ingestion_filters=ingestion_filters,
@@ -109,6 +132,7 @@ def main() -> None:
         filter_single_arm=args.single_arm,
         use_ct_cache=args.use_ct_cache,
         ct_cache_path=args.ct_cache_path,
+        candidate_year_range=year_range,
     )
 
     pipeline = Pipeline(config)
