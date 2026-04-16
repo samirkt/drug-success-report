@@ -17,6 +17,7 @@ from .llm_adjudicator import (
     extract_pdf_text,
 )
 from .llm_client_anthropic import AnthropicJSONClient
+from .llm_client_openai_compat import OpenAICompatJSONClient
 from .timeline import (
     DrugApprovalTimeline,
     IndicationApprovalEvent,
@@ -37,6 +38,7 @@ __all__ = [
     "MatchResult",
     "MatchVerdict",
     "NDCRecord",
+    "OpenAICompatJSONClient",
     "Submission",
     "TimelineBuilder",
     "extract_pdf_text",

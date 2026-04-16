@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-from typing import Any, Optional
+from typing import Optional
 
 import anthropic
 
@@ -23,9 +22,9 @@ from utils.prompt_runner import (
 )
 from utils.tiered_router import MODEL_SONNET
 
-logger = logging.getLogger(__name__)
+from ._json_parse import parse_json_object
 
-_JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
+logger = logging.getLogger(__name__)
 
 
 class AnthropicJSONClient:
@@ -78,7 +77,7 @@ class AnthropicJSONClient:
         )
         self._record_usage(message)
         raw = extract_text_response(message)
-        payload = _parse_json_object(raw)
+        payload = parse_json_object(raw)
 
         if key is not None:
             self.cache.put_llm_json(key, payload)
@@ -99,28 +98,3 @@ class AnthropicJSONClient:
             cache_creation_input_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
             cache_read_input_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
         )
-
-
-def _parse_json_object(raw: str) -> dict:
-    """Parse a JSON object, tolerating optional ```json fences."""
-    cleaned = _JSON_FENCE.sub("", raw).strip()
-    try:
-        obj = json.loads(cleaned)
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            logger.warning("AnthropicJSONClient: could not locate JSON object in response")
-            return {}
-        try:
-            obj = json.loads(cleaned[start : end + 1])
-        except json.JSONDecodeError as e:
-            logger.warning("AnthropicJSONClient: JSON parse failed: %s", e)
-            return {}
-    if not isinstance(obj, dict):
-        logger.warning(
-            "AnthropicJSONClient: expected JSON object, got %s",
-            type(obj).__name__,
-        )
-        return {}
-    return obj

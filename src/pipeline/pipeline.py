@@ -39,6 +39,14 @@ from utils.tiered_router import CostLedger
 
 logger = logging.getLogger(__name__)
 
+# Defaults for the OpenAI-compatible LLM backend on the FDA-timeline
+# adjudication stage. Points at local Ollama serving Qwen 2.5 32B Instruct
+# — sized for a 36GB-unified-memory Mac (Q4_K_M weights ~19GB leave room
+# for the 30k-char extract context). Users can override via PipelineConfig
+# fields `fda_llm_base_url` and `fda_llm_model`, or via CLI flags.
+DEFAULT_OPENAI_COMPAT_BASE_URL = "http://localhost:11434/v1"
+DEFAULT_OPENAI_COMPAT_MODEL = "qwen2.5:32b-instruct"
+
 
 @dataclass
 class PipelineConfig:
@@ -80,6 +88,19 @@ class PipelineConfig:
     openfda_api_key: Optional[str] = None  # falls back to OPENFDA_API_KEY env var
     fda_adjudication_as_of: Optional[date] = None  # None → date.today() at run time
     fda_failure_window_days: int = 730  # ClinSR's 2-year PTnT threshold
+
+    # LLM backend for FDA-timeline adjudication. Affects ONLY that stage —
+    # `llm_direct` adjudication and classification continue to use Anthropic
+    # through their existing plumbing regardless of this setting.
+    #   "openai_compat" (default): any OpenAI-compatible chat-completions
+    #       endpoint. Unset base_url/model fall back to local Ollama at
+    #       DEFAULT_OPENAI_COMPAT_BASE_URL serving DEFAULT_OPENAI_COMPAT_MODEL,
+    #       tuned for a 36GB M3 Max.
+    #   "anthropic": Claude Sonnet via the Anthropic SDK.
+    fda_llm_backend: str = "openai_compat"
+    fda_llm_base_url: Optional[str] = None  # defaults when openai_compat and unset
+    fda_llm_model: Optional[str] = None  # defaults when openai_compat and unset
+    fda_llm_api_key: Optional[str] = None  # optional; local Ollama needs none
 
     # Knowledge cache
     cache_path: str | None = "knowledge_cache.db"
@@ -383,13 +404,44 @@ class Pipeline:
             )
         if method == "fda_timeline":
             import os
-            from .fda import AnthropicJSONClient, FDAClient
+            from .fda import AnthropicJSONClient, FDAClient, OpenAICompatJSONClient
 
             fda = FDAClient(
                 cache_dir=cfg.fda_cache_dir,
                 openfda_api_key=cfg.openfda_api_key or os.getenv("OPENFDA_API_KEY"),
             )
-            llm = AnthropicJSONClient(cache=cache, ledger=self._ledger)
+
+            backend = cfg.fda_llm_backend
+            if backend == "anthropic":
+                anthropic_kwargs = {"cache": cache, "ledger": self._ledger}
+                if cfg.fda_llm_model:
+                    anthropic_kwargs["model"] = cfg.fda_llm_model
+                llm = AnthropicJSONClient(**anthropic_kwargs)
+                logger.info(
+                    "FDA adjudication using anthropic backend: %s",
+                    cfg.fda_llm_model or "default sonnet",
+                )
+            elif backend == "openai_compat":
+                base_url = cfg.fda_llm_base_url or DEFAULT_OPENAI_COMPAT_BASE_URL
+                model = cfg.fda_llm_model or DEFAULT_OPENAI_COMPAT_MODEL
+                llm = OpenAICompatJSONClient(
+                    base_url=base_url,
+                    model=model,
+                    api_key=cfg.fda_llm_api_key,
+                    cache=cache,
+                    ledger=self._ledger,
+                )
+                logger.info(
+                    "FDA adjudication using openai_compat backend: %s @ %s",
+                    model,
+                    base_url,
+                )
+            else:
+                raise ValueError(
+                    f"Unknown fda_llm_backend: {backend!r}. "
+                    "Expected 'openai_compat' or 'anthropic'."
+                )
+
             return FDAAdjudicationStage(
                 fda_client=fda,
                 llm_client=llm,

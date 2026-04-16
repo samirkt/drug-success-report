@@ -8,6 +8,7 @@ Usage:
 
 import argparse
 import logging
+import os
 from pathlib import Path
 
 from pipeline import Pipeline, PipelineConfig
@@ -110,6 +111,39 @@ def parse_args() -> argparse.Namespace:
         help="openFDA API key. Falls back to OPENFDA_API_KEY env var. "
              "Optional: unauthenticated clients get a lower rate limit.",
     )
+    parser.add_argument(
+        "--fda-llm-backend",
+        choices=["openai_compat", "anthropic"],
+        default="openai_compat",
+        help="FDA-timeline adjudication LLM backend. Default 'openai_compat' "
+             "routes to local Ollama at http://localhost:11434/v1 serving "
+             "qwen2.5:32b-instruct (tuned for 36GB M3 Max; install with "
+             "`ollama pull qwen2.5:32b-instruct`). Pass 'anthropic' to opt "
+             "in to Sonnet for this stage. Only affects FDA-timeline "
+             "adjudication — direct-LLM adjudication and classification "
+             "always use Anthropic.",
+    )
+    parser.add_argument(
+        "--fda-llm-base-url",
+        default=None,
+        help="Base URL for the OpenAI-compatible endpoint used by FDA "
+             "adjudication (e.g. http://localhost:11434/v1 for Ollama). "
+             "Falls back to FDA_LLM_BASE_URL env var, then to the Ollama "
+             "default. Ignored when --fda-llm-backend=anthropic.",
+    )
+    parser.add_argument(
+        "--fda-llm-model",
+        default=None,
+        help="Model identifier for the FDA LLM backend. Falls back to "
+             "FDA_LLM_MODEL env var, then to 'qwen2.5:32b-instruct' for "
+             "openai_compat. For anthropic, overrides the default Sonnet.",
+    )
+    parser.add_argument(
+        "--fda-llm-api-key",
+        default=None,
+        help="Optional API key for the OpenAI-compatible endpoint. Falls "
+             "back to FDA_LLM_API_KEY env var. Not needed for local Ollama.",
+    )
     return parser.parse_args()
 
 
@@ -156,6 +190,10 @@ def main() -> None:
         adjudication_method=args.adjudication_method,
         fda_cache_dir=Path(args.fda_cache_dir),
         openfda_api_key=args.openfda_api_key,
+        fda_llm_backend=args.fda_llm_backend,
+        fda_llm_base_url=args.fda_llm_base_url or os.getenv("FDA_LLM_BASE_URL"),
+        fda_llm_model=args.fda_llm_model or os.getenv("FDA_LLM_MODEL"),
+        fda_llm_api_key=args.fda_llm_api_key or os.getenv("FDA_LLM_API_KEY"),
     )
 
     pipeline = Pipeline(config)
