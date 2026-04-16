@@ -377,6 +377,149 @@ class TestCandidateSummaryTable:
 
 
 # ---------------------------------------------------------------------------
+# Cross-method columns: candidate summary surfaces cached outcomes from
+# both adjudication methods so agreement is auditable.
+# ---------------------------------------------------------------------------
+
+
+class TestCandidateSummaryCrossMethod:
+    def _fixture(self):
+        cand = Candidate(
+            candidate_id="c1",
+            drug_name="DrugA",
+            indication="Type 2 Diabetes",
+            highest_phase=TrialPhase.PHASE_3,
+            latest_completion_date=date(2020, 1, 1),
+        )
+        candidate_table = CandidateTable(candidates=[cand])
+        attribute_table = AttributeTable(attributes={
+            "c1": CandidateAttributes(
+                candidate_id="c1",
+                drug_modality="peptide",
+                disease_area="metabolic",
+            )
+        })
+        return cand, candidate_table, attribute_table
+
+    def test_columns_present_with_no_cache(self):
+        cand, candidate_table, attribute_table = self._fixture()
+        outcome_table = OutcomeTable(outcomes={
+            "c1": CandidateOutcomeRecord(
+                candidate_id="c1", outcome=CandidateOutcome.APPROVED,
+            )
+        })
+        rows = candidate_summary_table(candidate_table, attribute_table, outcome_table)
+        row = rows[0]
+        for col in (
+            "llm_direct_outcome", "llm_direct_confidence", "llm_direct_reasoning",
+            "fda_timeline_outcome", "fda_timeline_confidence", "fda_timeline_reasoning",
+            "fda_approval_date", "fda_commercialization_date", "outcomes_agree",
+        ):
+            assert col in row
+        assert row["outcomes_agree"] is None  # neither side known
+
+    def test_agreement_when_both_methods_cached(self, tmp_path):
+        from pipeline.knowledge_cache import KnowledgeCache
+
+        cand, candidate_table, attribute_table = self._fixture()
+        cache = KnowledgeCache(tmp_path / "kc.db")
+        key = KnowledgeCache.make_adjudication_key(
+            cand.drug_name, cand.indication, cand.highest_phase.value
+        )
+        cache.put_outcome(key, CandidateOutcomeRecord(
+            candidate_id="c1", outcome=CandidateOutcome.APPROVED,
+            confidence=0.9, reasoning="llm-direct verdict",
+            evidence_sources=["orange_book"],
+        ))
+        cache.put_fda_outcome(key, CandidateOutcomeRecord(
+            candidate_id="c1", outcome=CandidateOutcome.COMMERCIALIZED,
+            confidence=0.8, reasoning="fda-timeline verdict",
+            evidence_sources=["fda_lookup", "indication_match"],
+            approval_date=date(2020, 3, 1),
+            commercialization_date=date(2020, 4, 1),
+        ))
+
+        # Active run is fda_timeline; outcome_table should be authoritative
+        # for the fda_timeline_* columns.
+        outcome_table = OutcomeTable(outcomes={
+            "c1": CandidateOutcomeRecord(
+                candidate_id="c1", outcome=CandidateOutcome.COMMERCIALIZED,
+                confidence=0.8, reasoning="fda-timeline verdict",
+                evidence_sources=["fda_lookup", "indication_match"],
+                approval_date=date(2020, 3, 1),
+                commercialization_date=date(2020, 4, 1),
+            )
+        })
+        rows = candidate_summary_table(
+            candidate_table, attribute_table, outcome_table,
+            cache=cache, adjudication_method="fda_timeline",
+        )
+        row = rows[0]
+
+        assert row["llm_direct_outcome"] == CandidateOutcome.APPROVED.value
+        assert row["fda_timeline_outcome"] == CandidateOutcome.COMMERCIALIZED.value
+        assert row["llm_direct_reasoning"] == "llm-direct verdict"
+        assert row["fda_timeline_reasoning"] == "fda-timeline verdict"
+        assert row["fda_approval_date"] == date(2020, 3, 1)
+        assert row["fda_commercialization_date"] == date(2020, 4, 1)
+        assert row["outcomes_agree"] is False  # APPROVED vs COMMERCIALIZED
+
+    def test_outcomes_agree_true_when_matching(self, tmp_path):
+        from pipeline.knowledge_cache import KnowledgeCache
+
+        cand, candidate_table, attribute_table = self._fixture()
+        cache = KnowledgeCache(tmp_path / "kc.db")
+        key = KnowledgeCache.make_adjudication_key(
+            cand.drug_name, cand.indication, cand.highest_phase.value
+        )
+        cache.put_outcome(key, CandidateOutcomeRecord(
+            candidate_id="c1", outcome=CandidateOutcome.FAILED_PHASE_3,
+        ))
+        cache.put_fda_outcome(key, CandidateOutcomeRecord(
+            candidate_id="c1", outcome=CandidateOutcome.FAILED_PHASE_3,
+        ))
+        outcome_table = OutcomeTable(outcomes={
+            "c1": CandidateOutcomeRecord(
+                candidate_id="c1", outcome=CandidateOutcome.FAILED_PHASE_3,
+            )
+        })
+        rows = candidate_summary_table(
+            candidate_table, attribute_table, outcome_table,
+            cache=cache, adjudication_method="fda_timeline",
+        )
+        assert rows[0]["outcomes_agree"] is True
+
+    def test_active_llm_direct_overrides_stale_llm_cache(self, tmp_path):
+        """When running llm_direct, the active outcome should populate
+        llm_direct_* columns even if an older cache entry has a different value."""
+        from pipeline.knowledge_cache import KnowledgeCache
+
+        cand, candidate_table, attribute_table = self._fixture()
+        cache = KnowledgeCache(tmp_path / "kc.db")
+        key = KnowledgeCache.make_adjudication_key(
+            cand.drug_name, cand.indication, cand.highest_phase.value
+        )
+        # Stale cached llm_direct from a previous run.
+        cache.put_outcome(key, CandidateOutcomeRecord(
+            candidate_id="c1", outcome=CandidateOutcome.ONGOING,
+        ))
+        outcome_table = OutcomeTable(outcomes={
+            "c1": CandidateOutcomeRecord(
+                candidate_id="c1", outcome=CandidateOutcome.APPROVED,
+            )
+        })
+        rows = candidate_summary_table(
+            candidate_table, attribute_table, outcome_table,
+            cache=cache, adjudication_method="llm_direct",
+        )
+        # Active run wins for its own method's column.
+        assert rows[0]["llm_direct_outcome"] == CandidateOutcome.APPROVED.value
+        # No fda_timeline run has touched this cache yet.
+        assert rows[0]["fda_timeline_outcome"] is None
+        assert rows[0]["outcomes_agree"] is None
+
+
+# ---------------------------------------------------------------------------
 # _funnel_table  (FAIL NOW — stub; PASS when implemented)
 # ---------------------------------------------------------------------------
 

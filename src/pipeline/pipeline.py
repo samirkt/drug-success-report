@@ -28,6 +28,8 @@ from .models import (
 from .stages import (
     AttributeClassificationStage,
     CandidateClusteringStage,
+    FDAAdjudicationConfig,
+    FDAAdjudicationStage,
     FunnelAggregationStage,
     OutcomeAdjudicationStage,
     ReportingStage,
@@ -56,6 +58,12 @@ class PipelineConfig:
     use_literature_lookup: bool = True
 
     # Adjudication
+    # Which adjudication method to use. "fda_timeline" reconstructs each
+    # drug's FDA approval timeline from openFDA and matches indications
+    # against it. "llm_direct" asks the LLM directly whether each
+    # drug-indication pair is approved/failed (backed by the regulatory
+    # shortcut + KnowledgeCache).
+    adjudication_method: str = "fda_timeline"
     use_regulatory_data: bool = True
     # Path to the DrugBank-derived products CSV used for deterministic
     # approval grounding. Built once by
@@ -66,6 +74,12 @@ class PipelineConfig:
     # Path to the DrugBank-derived synonyms CSV used for codename↔INN
     # recovery during clustering. Built by the same script.
     drugbank_synonyms_csv: Path = Path("data/drugbank_synonyms.csv")
+
+    # FDA-timeline adjudication (only used when adjudication_method="fda_timeline")
+    fda_cache_dir: Path = Path(".fda_cache")
+    openfda_api_key: Optional[str] = None  # falls back to OPENFDA_API_KEY env var
+    fda_adjudication_as_of: Optional[date] = None  # None → date.today() at run time
+    fda_failure_window_days: int = 730  # ClinSR's 2-year PTnT threshold
 
     # Knowledge cache
     cache_path: str | None = "knowledge_cache.db"
@@ -312,6 +326,8 @@ class Pipeline:
             from .regulatory import RegulatoryIndex
             regulatory_index = RegulatoryIndex.from_csv(cfg.regulatory_products_csv)
 
+        adjudication_stage = self._build_adjudication_stage(cfg, cache, regulatory_index)
+
         return {
             "ingestion": TrialIngestionStage(
                 source=cfg.data_source,
@@ -332,12 +348,7 @@ class Pipeline:
                 cache=cache,
                 ledger=self._ledger,
             ),
-            "adjudication": OutcomeAdjudicationStage(
-                use_regulatory_data=cfg.use_regulatory_data,
-                cache=cache,
-                ledger=self._ledger,
-                regulatory_index=regulatory_index,
-            ),
+            "adjudication": adjudication_stage,
             "aggregation": FunnelAggregationStage(
                 reference_date=cfg.aggregation_reference_date,
                 stale_cutoff_years=cfg.stale_trial_cutoff_years,
@@ -351,5 +362,44 @@ class Pipeline:
                 reference_date=cfg.aggregation_reference_date,
                 stale_cutoff_years=cfg.stale_trial_cutoff_years,
                 back_propagate_approval=cfg.back_propagate_approval,
+                cache=cache,
+                adjudication_method=cfg.adjudication_method,
             ),
         }
+
+    def _build_adjudication_stage(self, cfg: "PipelineConfig", cache, regulatory_index):
+        """Construct the configured adjudicator.
+
+        Both branches produce stages conforming to `run(CandidateTable) -> OutcomeTable`
+        so downstream aggregation/reporting stay untouched.
+        """
+        method = cfg.adjudication_method
+        if method == "llm_direct":
+            return OutcomeAdjudicationStage(
+                use_regulatory_data=cfg.use_regulatory_data,
+                cache=cache,
+                ledger=self._ledger,
+                regulatory_index=regulatory_index,
+            )
+        if method == "fda_timeline":
+            import os
+            from .fda import AnthropicJSONClient, FDAClient
+
+            fda = FDAClient(
+                cache_dir=cfg.fda_cache_dir,
+                openfda_api_key=cfg.openfda_api_key or os.getenv("OPENFDA_API_KEY"),
+            )
+            llm = AnthropicJSONClient(cache=cache, ledger=self._ledger)
+            return FDAAdjudicationStage(
+                fda_client=fda,
+                llm_client=llm,
+                config=FDAAdjudicationConfig(
+                    as_of=cfg.fda_adjudication_as_of,
+                    failure_window_days=cfg.fda_failure_window_days,
+                ),
+                cache=cache,
+            )
+        raise ValueError(
+            f"Unknown adjudication_method: {method!r}. "
+            "Expected 'llm_direct' or 'fda_timeline'."
+        )

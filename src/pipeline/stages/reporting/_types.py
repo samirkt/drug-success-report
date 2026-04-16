@@ -7,6 +7,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from ...knowledge_cache import KnowledgeCache
     from ...models import (
         AttributeTable,
         CandidateTable,
@@ -30,6 +31,8 @@ class ReportContext:
     reference_date: date | None = None
     stale_cutoff_years: float = 2.0
     back_propagate_approval: bool = True
+    cache: "KnowledgeCache | None" = None
+    adjudication_method: str = "fda_timeline"
 
 
 @dataclass

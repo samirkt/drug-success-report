@@ -40,6 +40,8 @@ class ReportingStage:
         reference_date: date | None = None,
         stale_cutoff_years: float = 2.0,
         back_propagate_approval: bool = True,
+        cache=None,
+        adjudication_method: str = "fda_timeline",
     ):
         self.output_path = output_path
         self.formats = formats or ["html"]
@@ -48,6 +50,8 @@ class ReportingStage:
         self.reference_date = reference_date
         self.stale_cutoff_years = stale_cutoff_years
         self.back_propagate_approval = back_propagate_approval
+        self.cache = cache
+        self.adjudication_method = adjudication_method
 
     def run(
         self,
@@ -69,6 +73,8 @@ class ReportingStage:
             reference_date=self.reference_date,
             stale_cutoff_years=self.stale_cutoff_years,
             back_propagate_approval=self.back_propagate_approval,
+            cache=self.cache,
+            adjudication_method=self.adjudication_method,
         )
 
         composer = ReportComposer()

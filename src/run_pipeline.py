@@ -90,6 +90,26 @@ def parse_args() -> argparse.Namespace:
         metavar="PATH",
         help="Path to labeled benchmark CSV. If provided, prints outcome validation metrics after the pipeline run.",
     )
+    parser.add_argument(
+        "--adjudication-method",
+        choices=["fda_timeline", "llm_direct"],
+        default="fda_timeline",
+        help="Outcome adjudication method. 'fda_timeline' reconstructs each drug's "
+             "FDA approval timeline from openFDA and matches indications against it "
+             "(default). 'llm_direct' asks the LLM directly and uses the KnowledgeCache.",
+    )
+    parser.add_argument(
+        "--fda-cache-dir",
+        default=".fda_cache",
+        help="Directory for on-disk openFDA response cache (only used when "
+             "--adjudication-method=fda_timeline).",
+    )
+    parser.add_argument(
+        "--openfda-api-key",
+        default=None,
+        help="openFDA API key. Falls back to OPENFDA_API_KEY env var. "
+             "Optional: unauthenticated clients get a lower rate limit.",
+    )
     return parser.parse_args()
 
 
@@ -133,6 +153,9 @@ def main() -> None:
         use_ct_cache=args.use_ct_cache,
         ct_cache_path=args.ct_cache_path,
         candidate_year_range=year_range,
+        adjudication_method=args.adjudication_method,
+        fda_cache_dir=Path(args.fda_cache_dir),
+        openfda_api_key=args.openfda_api_key,
     )
 
     pipeline = Pipeline(config)

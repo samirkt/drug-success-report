@@ -5,10 +5,19 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from .models import CandidateAttributes, CandidateOutcome, CandidateOutcomeRecord
+
+
+def _parse_iso_date(raw: str | None) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +38,21 @@ CREATE TABLE IF NOT EXISTS adjudication_cache (
     reasoning        TEXT NOT NULL,
     evidence_sources TEXT NOT NULL,
     created_at       TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS llm_json_cache (
+    cache_key     TEXT PRIMARY KEY,
+    response_json TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fda_adjudication_cache (
+    cache_key            TEXT PRIMARY KEY,
+    outcome              TEXT NOT NULL,
+    confidence           REAL NOT NULL,
+    reasoning            TEXT NOT NULL,
+    evidence_sources     TEXT NOT NULL,
+    approval_date        TEXT,
+    commercialization_date TEXT,
+    created_at           TEXT NOT NULL
 );
 """
 
@@ -189,6 +213,80 @@ class KnowledgeCache:
                 record.confidence,
                 record.reasoning,
                 json.dumps(record.evidence_sources),
+                now,
+            ),
+        )
+        self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Generic LLM-JSON cache (used by stages/adjudication_fda.py for
+    # indication extract/match calls that return arbitrary JSON payloads)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def make_llm_json_key(*parts: str) -> str:
+        payload = "|".join(p.lower() for p in parts)
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    def get_llm_json(self, cache_key: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT response_json FROM llm_json_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            return json.loads(row["response_json"])
+        except json.JSONDecodeError:
+            return None
+
+    def put_llm_json(self, cache_key: str, payload: dict) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT OR REPLACE INTO llm_json_cache (cache_key, response_json, created_at) VALUES (?, ?, ?)",
+            (cache_key, json.dumps(payload), now),
+        )
+        self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # FDA-timeline adjudication cache (parallel to adjudication_cache so
+    # the candidate summary can compare outcomes from both methods when
+    # both have been run against the same KnowledgeCache).
+    # ------------------------------------------------------------------
+
+    def get_fda_outcome(self, cache_key: str, candidate_id: str) -> CandidateOutcomeRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM fda_adjudication_cache WHERE cache_key = ?", (cache_key,)
+        ).fetchone()
+        if row is None:
+            return None
+        return CandidateOutcomeRecord(
+            candidate_id=candidate_id,
+            outcome=CandidateOutcome(row["outcome"]),
+            confidence=row["confidence"],
+            reasoning=row["reasoning"],
+            evidence_sources=json.loads(row["evidence_sources"]),
+            approval_date=_parse_iso_date(row["approval_date"]),
+            commercialization_date=_parse_iso_date(row["commercialization_date"]),
+        )
+
+    def put_fda_outcome(self, cache_key: str, record: CandidateOutcomeRecord) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO fda_adjudication_cache
+                (cache_key, outcome, confidence, reasoning, evidence_sources,
+                 approval_date, commercialization_date, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cache_key,
+                record.outcome.value,
+                record.confidence,
+                record.reasoning,
+                json.dumps(record.evidence_sources),
+                record.approval_date.isoformat() if record.approval_date else None,
+                record.commercialization_date.isoformat() if record.commercialization_date else None,
                 now,
             ),
         )
