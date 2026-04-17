@@ -20,8 +20,12 @@ from pipeline.fda.fda_client import (
     Submission,
 )
 from pipeline.fda.commercial import CommercialStatusChecker
-from pipeline.fda.llm_adjudicator import IndicationAdjudicator
-from pipeline.fda.timeline import TimelineBuilder
+from pipeline.fda.llm_adjudicator import (
+    ExtractedIndication,
+    IndicationAdjudicator,
+    _try_string_match,
+)
+from pipeline.fda.timeline import TimelineBuilder, _filter_innovator_applications
 from pipeline.knowledge_cache import KnowledgeCache
 from pipeline.models import (
     Candidate,
@@ -539,6 +543,154 @@ class TestAdjudicationStageParallelism:
         """workers=0 or negative is silently clamped to 1 (sequential)."""
         stage = self._make_parallel_stage(FakeFDA(), FakeLLM(), workers=0)
         assert stage.workers == 1
+
+
+# ---------------------------------------------------------------------------
+# ANDA filtering
+# ---------------------------------------------------------------------------
+
+
+class TestFilterInnovatorApplications:
+    def test_anda_excluded_nda_bla_kept(self):
+        nda = Application(
+            application_number="NDA021436",
+            sponsor_name="A", active_ingredients=["X"], brand_name="B",
+        )
+        bla = Application(
+            application_number="BLA125514",
+            sponsor_name="A", active_ingredients=["X"], brand_name="B",
+        )
+        anda = Application(
+            application_number="ANDA076805",
+            sponsor_name="A", active_ingredients=["X"], brand_name="B",
+        )
+        result = _filter_innovator_applications([nda, bla, anda])
+        assert result == [nda, bla]
+
+    def test_all_andas_falls_back_to_full_list(self):
+        anda1 = Application(
+            application_number="ANDA076805",
+            sponsor_name="A", active_ingredients=["X"], brand_name="B",
+        )
+        anda2 = Application(
+            application_number="ANDA091234",
+            sponsor_name="A", active_ingredients=["X"], brand_name="B",
+        )
+        result = _filter_innovator_applications([anda1, anda2])
+        assert result == [anda1, anda2]
+
+    def test_empty_list_returns_empty(self):
+        assert _filter_innovator_applications([]) == []
+
+    def test_case_insensitive_prefix(self):
+        app = Application(
+            application_number="anda076805",
+            sponsor_name="A", active_ingredients=["X"], brand_name="B",
+        )
+        nda = Application(
+            application_number="nda021436",
+            sponsor_name="A", active_ingredients=["X"], brand_name="B",
+        )
+        result = _filter_innovator_applications([app, nda])
+        assert result == [nda]
+
+
+# ---------------------------------------------------------------------------
+# String-match shortcut for indication matching
+# ---------------------------------------------------------------------------
+
+
+class TestStringMatchShortcut:
+    def _ind(self, text, restriction=None, combo=None):
+        return ExtractedIndication(
+            indication_text=text,
+            population_restriction=restriction,
+            combination_partners=combo or [],
+            source_excerpt="",
+        )
+
+    def test_exact_match_returns_approved(self):
+        result = _try_string_match(
+            "non-small cell lung cancer",
+            None,
+            [self._ind("Non-Small Cell Lung Cancer")],
+        )
+        assert result is not None
+        assert result.verdict == "APPROVED"
+        assert result.matched_indication.indication_text == "Non-Small Cell Lung Cancer"
+
+    def test_trial_substring_of_approved(self):
+        result = _try_string_match(
+            "lung cancer",
+            None,
+            [self._ind("advanced non-small cell lung cancer")],
+        )
+        assert result is not None
+        assert result.verdict == "APPROVED"
+
+    def test_approved_substring_of_trial(self):
+        result = _try_string_match(
+            "metastatic non-small cell lung cancer in adults",
+            None,
+            [self._ind("non-small cell lung cancer")],
+        )
+        assert result is not None
+        assert result.verdict == "APPROVED"
+
+    def test_mesh_indication_used_for_match(self):
+        result = _try_string_match(
+            "NSCLC Stage IV",
+            "non-small cell lung cancer",
+            [self._ind("metastatic non-small cell lung cancer")],
+        )
+        assert result is not None
+        assert result.verdict == "APPROVED"
+
+    def test_mesh_inverted_form_defers_to_llm(self):
+        """MeSH headings like 'Carcinoma, Non-Small-Cell Lung' don't trivially
+        match the natural form 'non-small-cell lung carcinoma'. The shortcut
+        correctly defers to the LLM in this case."""
+        result = _try_string_match(
+            "NSCLC Stage IV",
+            "Carcinoma, Non-Small-Cell Lung",
+            [self._ind("non-small-cell lung carcinoma")],
+        )
+        assert result is None
+
+    def test_no_match_returns_none(self):
+        result = _try_string_match(
+            "Alzheimer disease",
+            None,
+            [self._ind("non-small cell lung cancer")],
+        )
+        assert result is None
+
+    def test_restricted_indication_skipped(self):
+        """Don't shortcut when population_restriction is present — LLM must decide."""
+        result = _try_string_match(
+            "non-small cell lung cancer",
+            None,
+            [self._ind("non-small cell lung cancer", restriction="PD-L1 >= 1%")],
+        )
+        assert result is None
+
+    def test_combination_indication_skipped(self):
+        """Don't shortcut when combination_partners is present."""
+        result = _try_string_match(
+            "non-small cell lung cancer",
+            None,
+            [self._ind("non-small cell lung cancer", combo=["carboplatin"])],
+        )
+        assert result is None
+
+    def test_whitespace_normalization(self):
+        result = _try_string_match(
+            "  Non-Small  Cell   Lung  Cancer  ",
+            None,
+            [self._ind("non-small cell lung cancer")],
+        )
+        assert result is not None
+        assert result.verdict == "APPROVED"
 
 
 # ---------------------------------------------------------------------------

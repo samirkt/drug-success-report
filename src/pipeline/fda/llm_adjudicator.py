@@ -205,6 +205,10 @@ class IndicationAdjudicator:
                 reasoning="No approved indications available.",
             )
 
+        quick = _try_string_match(trial_indication, mesh_indication, approved)
+        if quick is not None:
+            return quick
+
         approved_block = "\n".join(
             f"  [{i}] {ind.indication_text}"
             + (f" (restricted to: {ind.population_restriction})"
@@ -237,6 +241,58 @@ class IndicationAdjudicator:
         matched = approved[idx] if isinstance(idx, int) and 0 <= idx < len(approved) else None
 
         return MatchResult(verdict=verdict, reasoning=reasoning, matched_indication=matched)
+
+
+# ---------- deterministic string-match shortcut ----------
+
+
+def _normalize_indication(s: str) -> str:
+    """Lowercase, collapse whitespace, strip punctuation edges."""
+    return " ".join(s.lower().split()).strip(" .,;:")
+
+
+def _try_string_match(
+    trial_indication: str,
+    mesh_indication: Optional[str],
+    approved: list[ExtractedIndication],
+) -> Optional[MatchResult]:
+    """Return APPROVED without an LLM call when the match is trivially obvious.
+
+    Checks both the trial indication and the MeSH indication (if present)
+    against each approved indication for:
+      1. Exact match (after normalization)
+      2. Containment (trial text is a substring of approved, or vice versa)
+
+    Only matches unrestricted approved indications — if an indication has a
+    population_restriction or combination_partners, the match could be
+    partial and needs the LLM to adjudicate.
+    """
+    trial_norm = _normalize_indication(trial_indication)
+    mesh_norm = _normalize_indication(mesh_indication) if mesh_indication else None
+    candidates = [trial_norm]
+    if mesh_norm and mesh_norm != trial_norm:
+        candidates.append(mesh_norm)
+
+    for i, ind in enumerate(approved):
+        if ind.population_restriction or ind.combination_partners:
+            continue
+        approved_norm = _normalize_indication(ind.indication_text)
+        for cand in candidates:
+            if cand == approved_norm or cand in approved_norm or approved_norm in cand:
+                logger.debug(
+                    "String-match shortcut: '%s' ↔ '%s'",
+                    cand, approved_norm,
+                )
+                return MatchResult(
+                    verdict="APPROVED",
+                    reasoning=(
+                        f"Deterministic string match: trial indication "
+                        f"'{trial_indication}' matches approved indication "
+                        f"'{ind.indication_text}' (no LLM needed)."
+                    ),
+                    matched_indication=ind,
+                )
+    return None
 
 
 # ---------- PDF text extraction helper ----------

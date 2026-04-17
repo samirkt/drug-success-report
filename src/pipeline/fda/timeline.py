@@ -81,10 +81,13 @@ class TimelineBuilder:
         self.pdf_extractor = pdf_extractor
 
     def build(self, drug_name: str) -> DrugApprovalTimeline:
-        applications = self.fda.find_applications_by_drug(drug_name)
-        timeline = DrugApprovalTimeline(drug_name=drug_name, applications=applications)
+        all_applications = self.fda.find_applications_by_drug(drug_name)
+        innovator_apps = _filter_innovator_applications(all_applications)
+        timeline = DrugApprovalTimeline(
+            drug_name=drug_name, applications=innovator_apps,
+        )
 
-        for app in applications:
+        for app in innovator_apps:
             self._process_application(drug_name, app, timeline)
 
         return timeline
@@ -218,6 +221,29 @@ class TimelineBuilder:
                 and _normalize(e.indication.indication_text) in suppl_keys
             )
         ]
+
+
+def _filter_innovator_applications(apps: list[Application]) -> list[Application]:
+    """Keep only NDA/BLA applications; drop generic ANDAs.
+
+    Generic ANDAs reference the innovator's label and never introduce new
+    indications via supplemental approvals. Processing them wastes an LLM
+    extract call per application for an identical result. If the filter
+    leaves nothing (rare — e.g. an OTC monograph drug with only ANDAs),
+    fall back to the full list so the pipeline doesn't silently lose data.
+    """
+    innovators = [
+        a for a in apps
+        if not a.application_number.upper().startswith("ANDA")
+    ]
+    if not innovators and apps:
+        logger.warning(
+            "No NDA/BLA applications found among %d results; "
+            "falling back to all applications.",
+            len(apps),
+        )
+        return apps
+    return innovators
 
 
 def _normalize(s: str) -> str:
