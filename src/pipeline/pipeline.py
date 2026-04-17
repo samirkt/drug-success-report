@@ -79,18 +79,10 @@ class PipelineConfig:
     # Which adjudication method to use. "fda_timeline" reconstructs each
     # drug's FDA approval timeline from openFDA and matches indications
     # against it. "llm_direct" asks the LLM directly whether each
-    # drug-indication pair is approved/failed (backed by the regulatory
-    # shortcut + KnowledgeCache).
+    # drug-indication pair is approved/failed (backed by KnowledgeCache).
     adjudication_method: str = "fda_timeline"
-    use_regulatory_data: bool = True
-    # Path to the DrugBank-derived products CSV used for deterministic
-    # approval grounding. Built once by
-    # `src/scripts/build_drugbank_derivatives.py` from the DrugBank full
-    # XML export. If the file is missing, the regulatory index is empty
-    # and adjudication falls back to LLM-only verdicts.
-    regulatory_products_csv: Path = Path("data/drugbank_products.csv")
     # Path to the DrugBank-derived synonyms CSV used for codename↔INN
-    # recovery during clustering. Built by the same script.
+    # recovery during clustering.
     drugbank_synonyms_csv: Path = Path("data/drugbank_synonyms.csv")
 
     # FDA-timeline adjudication (only used when adjudication_method="fda_timeline")
@@ -363,12 +355,7 @@ class Pipeline:
             from .aact_cache import AACTCache
             ct_cache = AACTCache(cfg.ct_cache_path)
 
-        regulatory_index = None
-        if cfg.use_regulatory_data:
-            from .regulatory import RegulatoryIndex
-            regulatory_index = RegulatoryIndex.from_csv(cfg.regulatory_products_csv)
-
-        adjudication_stage = self._build_adjudication_stage(cfg, cache, regulatory_index)
+        adjudication_stage = self._build_adjudication_stage(cfg, cache)
 
         return {
             "ingestion": TrialIngestionStage(
@@ -409,7 +396,7 @@ class Pipeline:
             ),
         }
 
-    def _build_adjudication_stage(self, cfg: "PipelineConfig", cache, regulatory_index):
+    def _build_adjudication_stage(self, cfg: "PipelineConfig", cache):
         """Construct the configured adjudicator.
 
         Both branches produce stages conforming to `run(CandidateTable) -> OutcomeTable`
@@ -418,10 +405,8 @@ class Pipeline:
         method = cfg.adjudication_method
         if method == "llm_direct":
             return OutcomeAdjudicationStage(
-                use_regulatory_data=cfg.use_regulatory_data,
                 cache=cache,
                 ledger=self._ledger,
-                regulatory_index=regulatory_index,
             )
         if method == "fda_timeline":
             import os

@@ -61,10 +61,6 @@ class TestPipelineConfig:
         config = PipelineConfig()
         assert config.use_literature_lookup is True
 
-    def test_default_use_regulatory_data(self):
-        config = PipelineConfig()
-        assert config.use_regulatory_data is True
-
     def test_default_report_output_path(self):
         config = PipelineConfig()
         assert config.report_output_path is None
@@ -86,7 +82,6 @@ class TestPipelineConfig:
             clustering_method="fuzzy",
             llm_adjudicate_clusters=False,
             use_literature_lookup=False,
-            use_regulatory_data=False,
             drop_unmatched_drugbank=False,
             report_output_path="/tmp/reports",
             report_formats=["html", "excel"],
@@ -96,7 +91,6 @@ class TestPipelineConfig:
         assert config.clustering_method == "fuzzy"
         assert config.llm_adjudicate_clusters is False
         assert config.use_literature_lookup is False
-        assert config.use_regulatory_data is False
         assert config.drop_unmatched_drugbank is False
         assert config.report_output_path == "/tmp/reports"
         assert config.report_formats == ["html", "excel"]
@@ -199,11 +193,6 @@ class TestPipelineConstruction:
         config = PipelineConfig(use_literature_lookup=False)
         pipeline = Pipeline(config)
         assert pipeline._stages["classification"].use_literature is False
-
-    def test_adjudication_stage_receives_use_regulatory_data(self):
-        config = PipelineConfig(use_regulatory_data=False)
-        pipeline = Pipeline(config)
-        assert pipeline._stages["adjudication"].use_regulatory_data is False
 
     def test_reporting_stage_receives_output_path(self):
         config = PipelineConfig(report_output_path="/tmp/reports")
@@ -439,7 +428,6 @@ class TestPipelineIntegration:
             clustering_method="fuzzy",
             llm_adjudicate_clusters=False,
             use_literature_lookup=False,
-            use_regulatory_data=False,
             report_output_path=None,
             report_formats=["html"],
         )

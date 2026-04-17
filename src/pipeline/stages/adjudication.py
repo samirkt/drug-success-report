@@ -46,7 +46,6 @@ from utils.tiered_router import (
 
 if TYPE_CHECKING:
     from ..knowledge_cache import KnowledgeCache
-    from ..regulatory import RegulatoryIndex
 
 logger = logging.getLogger(__name__)
 
@@ -173,106 +172,25 @@ class OutcomeAdjudicationStage:
 
     def __init__(
         self,
-        use_regulatory_data: bool = True,
         cache: "KnowledgeCache | None" = None,
         ledger: CostLedger | None = None,
-        regulatory_index: "RegulatoryIndex | None" = None,
     ):
-        self.use_regulatory_data = use_regulatory_data
         self.cache = cache
         self.ledger = ledger
-        self.regulatory_index = regulatory_index if use_regulatory_data else None
-
-    # ------------------------------------------------------------------
-    # Regulatory approval shortcut
-    # ------------------------------------------------------------------
-
-    def _try_regulatory_approval(
-        self, candidate: Candidate,
-    ) -> CandidateOutcomeRecord | None:
-        """Consult the RegulatoryIndex for a deterministic APPROVED verdict.
-
-        Returns an APPROVED CandidateOutcomeRecord when the candidate's drug
-        has an entry in the regulatory index (US-approved with at least one
-        populated marketing date), or None otherwise. Ground truth comes from
-        FDA/Drugs@FDA via the DrugBank products export, aligning with the
-        ClinSR methodology's deterministic approval signal.
-        """
-        if self.regulatory_index is None:
-            return None
-        rec = self.regulatory_index.lookup(
-            drug_name=candidate.drug_name_raw or candidate.drug_name,
-            drugbank_id=candidate.drugbank_id,
-        )
-        if rec is None:
-            return None
-
-        # If the FDA approval date predates every trial the candidate ever
-        # registered for this indication, this is almost certainly a match
-        # on a different indication (the drug is approved for X; our
-        # candidate studies drug-in-Y). Skip such hits so we do not credit
-        # the wrong program. We allow slack of 1 year.
-        approval_date = rec.approval_date or rec.first_marketed_date
-        earliest = candidate.earliest_start_date
-        if approval_date and earliest:
-            # Approval can post-date the earliest Phase 1 by many years;
-            # that's normal. The problematic direction is approval occurring
-            # well before any trial in our candidate — suggesting the approved
-            # indication is unrelated.
-            years_before = (earliest - approval_date).days / 365.25
-            if years_before > 10:
-                return None
-
-        return CandidateOutcomeRecord(
-            candidate_id=candidate.candidate_id,
-            outcome=CandidateOutcome.APPROVED,
-            confidence=1.0,
-            reasoning=(
-                f"Regulatory: DrugBank products export indicates FDA approval "
-                f"for {candidate.drug_name}"
-                + (f" (appl {rec.appl_no})" if rec.appl_no else "")
-                + (f" on {rec.approval_date}" if rec.approval_date else "")
-                + "."
-            ),
-            evidence_sources=[rec.evidence_source],
-            approval_date=rec.approval_date,
-            commercialization_date=rec.first_marketed_date,
-        )
 
     def run(self, candidate_table: CandidateTable) -> OutcomeTable:
         """Adjudicate outcomes for all candidates. Returns a populated OutcomeTable."""
         candidates = candidate_table.candidates
         total = len(candidates)
         outcomes: dict[str, CandidateOutcomeRecord] = {}
-        regulatory_hits: dict[str, CandidateOutcomeRecord] = {}
         cache_misses: list[tuple[str | None, Candidate]] = []
 
         logger.info("Adjudication: starting %d candidates", total)
 
-        # Phase 0a: regulatory-grounded APPROVED shortcut (runs first so the
-        # all-trials-terminated deterministic failure path does not bury an
-        # approval that the FDA has already granted).
-        n_regulatory = 0
-        pending_after_regulatory: list[Candidate] = []
-        for candidate in candidates:
-            reg_result = self._try_regulatory_approval(candidate)
-            if reg_result is not None:
-                outcomes[candidate.candidate_id] = reg_result
-                regulatory_hits[candidate.candidate_id] = reg_result
-                n_regulatory += 1
-            else:
-                pending_after_regulatory.append(candidate)
-        if n_regulatory:
-            logger.info(
-                "Adjudication: %d candidates approved via regulatory index",
-                n_regulatory,
-            )
-
-        # Phase 0b: deterministic failure detection (only for candidates
-        # without a regulatory approval hit).
+        # Phase 0: deterministic failure detection.
         n_deterministic = 0
         remaining: list[Candidate] = []
-        for candidate in pending_after_regulatory:
+        for candidate in candidates:
             det_result = try_deterministic_failure(candidate)
             if det_result is not None:
                 outcomes[candidate.candidate_id] = det_result
@@ -315,7 +233,7 @@ class OutcomeAdjudicationStage:
                 n_hits,
                 n_misses,
             )
-        _free_candidates = n_hits + n_deterministic + n_regulatory
+        _free_candidates = n_hits + n_deterministic
         if self.ledger is not None and _free_candidates > 0:
             self.ledger.record_cache_hits(stage="Adjudication", n_hits=_free_candidates)
 
