@@ -12,24 +12,40 @@ Respond with a JSON array and nothing else. Each element must use this exact sch
 }
 
 Rules:
+
 - Return one array element per input candidate, in the same order
 - candidate_index must match the 1-based index provided in the input
-- drug_modality must be exactly one of: peptide, small_molecule, monoclonal_antibody, bispecific_antibody, adc, fusion_protein, sirna, antisense, mrna, cell_therapy, gene_therapy, vaccine, unknown
-- Modality definitions:
-  - peptide: a chain of 2 to 50 amino acids, including cyclic peptides, stapled peptides, and peptide hormones/analogs (e.g. GLP-1 agonists, somatostatin analogs)
-  - small_molecule: a chemically synthesized compound with molecular weight typically < 900 Da, not derived from amino acid chains
-  - monoclonal_antibody: a full-length immunoglobulin (IgG, IgM, etc.) targeting a single epitope, including humanized, chimeric, and fully human variants
-  - bispecific_antibody: an engineered antibody binding two distinct epitopes or antigens simultaneously
-  - adc: antibody-drug conjugate — a monoclonal antibody chemically linked to a cytotoxic small molecule payload
-  - fusion_protein: a recombinant protein combining domains from two or more proteins (e.g. etanercept, abatacept, Fc-fusion proteins)
-  - sirna: small interfering RNA, typically 20-25 nucleotides, designed to silence gene expression via RNA interference
-  - antisense: antisense oligonucleotide (ASO), a single-stranded nucleic acid that binds complementary mRNA to modulate gene expression
-  - mrna: messenger RNA therapeutic or vaccine encoding a protein antigen or therapeutic protein
-  - cell_therapy: a living cell product administered to treat disease, including CAR-T cells, TILs, stem cells, and NK cell therapies
-  - gene_therapy: a therapy delivering genetic material (DNA, viral vectors) to modify gene expression in vivo or ex vivo
-  - vaccine: a prophylactic or therapeutic immunization product (protein subunit, inactivated, live-attenuated, or nucleic acid-based); classify mRNA vaccines as "vaccine" not "mrna"
-  - unknown: use only when insufficient information is available to determine modality
-- disease_area must be exactly one of the values listed above
+- drug_modality must be exactly one of: peptide, small_molecule, protac_degrader, radioligand_therapy, monoclonal_antibody, checkpoint_inhibitor, bispecific_antibody, adc, fusion_protein, sirna, antisense, mrna_therapeutic, cell_therapy_engineered, cell_therapy_non_engineered, gene_therapy, vaccine, unknown
+- disease_area must be exactly one of: oncology, cardiovascular, metabolic, neurology, autoimmune, infectious_disease, respiratory, hematology, ophthalmology, psychiatry, gastroenterology, endocrine, urology, other, unknown
 - modality_confidence and disease_confidence must be exactly one of: HIGH, MEDIUM, LOW
 - reasoning must be a non-empty string
 - Output only valid JSON, no markdown fences or extra text
+
+Modality definitions:
+
+- peptide: chain of 2–50 amino acids, including cyclic/stapled peptides and peptide hormones/analogs (e.g. GLP-1 agonists, somatostatin analogs)
+- small_molecule: chemically synthesized compound typically < 900 Da; excludes PROTACs/degraders and radioligand therapies
+- protac_degrader: PROTACs, molecular glues, and CELMoDs — compounds that induce target protein degradation via the ubiquitin-proteasome system rather than inhibiting function
+- radioligand_therapy: radiopharmaceutical delivering a therapeutic isotope (Lu-177, Ac-225, I-131, Y-90, etc.) to target cells via any carrier
+- monoclonal_antibody: full-length immunoglobulin targeting a single epitope; excludes checkpoint inhibitors, bispecifics, and ADCs
+- checkpoint_inhibitor: any antibody (mono- or bispecific) targeting PD-1, PD-L1, CTLA-4, LAG-3, TIGIT, TIM-3, or other immune checkpoint receptors/ligands
+- bispecific_antibody: engineered antibody binding two distinct antigens, including BiTEs and T-cell engagers; excludes checkpoint-targeting bispecifics
+- adc: antibody-drug conjugate — antibody linked to a cytotoxic payload via a synthetic linker
+- fusion_protein: recombinant protein combining domains from two or more proteins (e.g. receptor-Fc traps, Fc-fusion proteins)
+- sirna: small interfering RNA silencing gene expression via RISC
+- antisense: antisense oligonucleotide (ASO) modulating gene expression via RNase H or steric blocking
+- mrna_therapeutic: mRNA encoding a therapeutic protein for non-vaccine indications, including personalized cancer neoantigen vaccines
+- cell_therapy_engineered: genetically modified cells (CAR-T, TCR-T, CAR-NK)
+- cell_therapy_non_engineered: unmodified cell products (MSCs, TILs, cord blood, dendritic cell products)
+- gene_therapy: delivery of genetic material via viral/non-viral vectors to modify gene expression in vivo or ex vivo
+- vaccine: prophylactic or therapeutic immunization against infectious pathogens, including mRNA vaccines for infectious diseases
+- unknown: insufficient information to classify
+
+Classification priority (apply when categories overlap):
+
+- Radioisotope in drug name → radioligand_therapy (not peptide, antibody, or small_molecule)
+- Antibody + cytotoxic payload → adc (not monoclonal_antibody)
+- Targets immune checkpoint → checkpoint_inhibitor (not monoclonal_antibody or bispecific_antibody)
+- Genetically modified cell product → cell_therapy_engineered (not gene_therapy)
+- mRNA against infectious pathogen → vaccine; mRNA for cancer/other → mrna_therapeutic
+- Induced protein degradation mechanism → protac_degrader (not small_molecule)

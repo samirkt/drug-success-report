@@ -19,8 +19,9 @@ per candidate:
 
 A candidate counts as a success for transition N→N+1 iff `from_phase` is in
 `phases_observed` AND `phases_advanced` contains any strictly later cohort.
-Approval is not back-filled to earlier clinical phases when trials there
-were not observed.
+When approval back-propagation is enabled, missing intermediate phases are
+imputed only within the contiguous range bounded by the candidate's earliest
+and latest observed phases.
 
 Transitions computed:
   Phase 1 → Phase 2
@@ -127,13 +128,11 @@ class FunnelAggregationStage:
                 cohort set when its latest activity date is at least this
                 many years before `reference_date`. Default 2.0 (ClinSR).
             back_propagate_approval:
-                When True (ClinSR-aligned default), a candidate with an
-                APPROVED or COMMERCIALIZED outcome is counted as having
-                reached Phase 1, Phase 2, and Phase 3 in `phases_observed`
-                regardless of whether any trial record for those phases
-                survived in the registry. This credits pre-FDAAA programs
-                whose early-phase records never made it into AACT. Set to
-                False to restore strict forward-looking semantics.
+                When True, fills missing intermediate phases in both
+                `phases_observed` and `phases_advanced` between the earliest
+                and latest currently observed phase for approved /
+                commercialized candidates. Set to False to preserve strict
+                forward-looking semantics.
         """
         self._reference_date = reference_date
         self._stale_cutoff_years = stale_cutoff_years
@@ -321,19 +320,19 @@ class FunnelAggregationStage:
             cohort.add("Market")
             advancement.add("Market")
 
-        # ClinSR-aligned back-propagation: an approved drug is by definition
-        # a drug that reached Phase 1, Phase 2, and Phase 3 at some point,
-        # even if the corresponding registry records were never published.
-        # Back-filling the cohort set credits those programs as denominator
-        # entries at every earlier clinical phase instead of silently
-        # dropping them because the trial rows are missing.
-        if back_propagate_approval and is_approved:
-            cohort.add("Phase 1")
-            cohort.add("Phase 2")
-            cohort.add("Phase 3")
-            advancement.add("Phase 1")
-            advancement.add("Phase 2")
-            advancement.add("Phase 3")
+        # Back-propagation for advanced candidates:
+        # impute missing intermediate phases
+        if back_propagate_approval:
+            observed_levels = sorted(
+                _PHASE_ORDER[p] for p in cohort if p in _PHASE_ORDER
+            )
+            if observed_levels:
+                low = observed_levels[0]
+                high = observed_levels[-1]
+                for phase, lvl in _PHASE_ORDER.items():
+                    if lvl <= high:
+                        cohort.add(phase)
+                        advancement.add(phase)
 
         return cohort, advancement
 

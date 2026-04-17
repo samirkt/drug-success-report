@@ -74,6 +74,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-trials", type=int, default=5,
                         help="Maximum number of trials to fetch and process")
     parser.add_argument(
+        "--max-candidates",
+        type=int,
+        default=None,
+        help="Random-sample this many candidates after clustering (and after "
+             "--year-range filtering), preserving each candidate's full trial "
+             "set. Unset/<=0 disables sampling. Composes with --max-trials, "
+             "which still caps the raw ingestion fetch.",
+    )
+    parser.add_argument(
+        "--sample-seed",
+        type=int,
+        default=42,
+        help="RNG seed for --max-candidates. Default 42 for reproducibility.",
+    )
+    parser.add_argument(
         "--cache-path",
         default="knowledge_cache.db",
         help="Path to the knowledge cache SQLite file. Pass empty string to disable.",
@@ -183,7 +198,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fda-adjudication-workers",
         type=int,
-        default=None,
+        default=4,
         help="Candidate-level parallelism for FDA-timeline adjudication. "
              "Default 1 (sequential). Set <= your Ollama OLLAMA_NUM_PARALLEL "
              "setting; raising past that just queues at the server. On a 36GB "
@@ -244,6 +259,8 @@ def main() -> None:
         report_output_path=args.output,
         report_formats=args.formats,
         max_trials=args.max_trials if args.max_trials > 0 else None,
+        max_candidates=args.max_candidates if (args.max_candidates or 0) > 0 else None,
+        sample_seed=args.sample_seed,
         peptide_only_report=not args.all_modalities,
         filter_single_arm=args.single_arm,
         use_ct_cache=args.use_ct_cache,

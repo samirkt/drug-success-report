@@ -12,6 +12,7 @@ Builds and executes the full research pipeline:
 
 import concurrent.futures
 import logging
+import random
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -67,6 +68,16 @@ class PipelineConfig:
     ingestion_filters: dict = field(default_factory=dict)
     max_trials: int | None = 50      # cap on rows fetched; None = full run
     filter_single_arm: bool = False   # drop basket and umbrella trials
+
+    # Post-clustering candidate sampling. When `max_candidates` is set, after
+    # clustering (and after the --year-range filter) the pipeline draws a
+    # deterministic random sample of that many candidates using
+    # `random.Random(sample_seed)` and prunes `TrialTable` to the union of
+    # those candidates' `trial_ids`. This preserves each sampled candidate's
+    # complete trial set — unlike `max_trials`, which caps raw ingestion rows
+    # and can leave candidates with only a partial trial set after clustering.
+    max_candidates: int | None = None
+    sample_seed: int = 42
 
     # Clustering
     clustering_method: str = "hybrid" # "embeddings" | "fuzzy" | "hybrid"
@@ -144,8 +155,7 @@ class PipelineConfig:
         default_factory=lambda: [
             (1962, 2000),
             (2000, 2006),
-            (2007, 2024),
-            (2015, 2023),  # ClinSR-comparable 9-year rolling window
+            (2007, 2026),
         ]
     )
 
@@ -215,6 +225,9 @@ class Pipeline:
         logger.info("Stage 2/5 — Candidate Clustering")
         result.candidate_table = self._run_clustering(result.trial_table)
         result.candidate_table = self._filter_by_year_range(result.candidate_table)
+        result.candidate_table, result.trial_table = self._sample_candidates(
+            result.candidate_table, result.trial_table
+        )
 
         logger.info("Stage 3/5 — Attribute Classification + Outcome Adjudication")
         result.attribute_table, result.outcome_table = self._run_parallel_stages(result.candidate_table)
@@ -271,6 +284,40 @@ class Pipeline:
             start_yr, end_yr, len(filtered), len(candidate_table.candidates),
         )
         return CandidateTable(candidates=filtered)
+
+    def _sample_candidates(
+        self,
+        candidate_table: CandidateTable,
+        trial_table: TrialTable,
+    ) -> tuple[CandidateTable, TrialTable]:
+        """Draw a deterministic random sample of candidates and prune trials to match.
+
+        Applied after clustering and year-range filtering so each sampled
+        candidate retains its complete trial set. Uses an isolated
+        `random.Random(seed)` so sampling is reproducible and does not
+        perturb any other RNG in the process.
+        """
+        n = self.config.max_candidates
+        if n is None or len(candidate_table.candidates) <= n:
+            return candidate_table, trial_table
+
+        rng = random.Random(self.config.sample_seed)
+        sampled = rng.sample(candidate_table.candidates, k=n)
+
+        allowed_nct_ids: set[str] = set()
+        for cand in sampled:
+            allowed_nct_ids.update(cand.trial_ids)
+        pruned_trials = [t for t in trial_table.trials if t.nct_id in allowed_nct_ids]
+
+        logger.info(
+            "Candidate sample (seed=%d): %d / %d candidates, %d / %d trials retained",
+            self.config.sample_seed,
+            len(sampled),
+            len(candidate_table.candidates),
+            len(pruned_trials),
+            len(trial_table.trials),
+        )
+        return CandidateTable(candidates=sampled), TrialTable(trials=pruned_trials)
 
     def _run_parallel_stages(
         self, candidate_table: CandidateTable

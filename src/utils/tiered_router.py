@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Model constants and pricing (per 1M tokens, USD)
 # ---------------------------------------------------------------------------
 
-MODEL_SONNET = "claude-sonnet-4-20250514"
+MODEL_SONNET = "claude-sonnet-4-6"
 MODEL_OPUS = "claude-opus-4-6"
 
 # Pricing per 1M tokens (input / output)
