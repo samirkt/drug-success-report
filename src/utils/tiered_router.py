@@ -11,6 +11,7 @@ Also provides CostLedger for tracking cumulative token usage and cost.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -52,6 +53,9 @@ class CostLedger:
     """Accumulates token counts and dollar costs across a full pipeline run."""
 
     entries: list[dict[str, Any]] = field(default_factory=list)
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
 
     @property
     def total_input_tokens(self) -> int:
@@ -95,18 +99,19 @@ class CostLedger:
             + cache_read_input_tokens * input_price * _CACHE_READ_MULTIPLIER
             + output_tokens * output_price
         ) / 1_000_000
-        self.entries.append(
-            {
-                "stage": stage,
-                "model": model,
-                "input_tokens": input_tokens,
-                "cache_creation_input_tokens": cache_creation_input_tokens,
-                "cache_read_input_tokens": cache_read_input_tokens,
-                "output_tokens": output_tokens,
-                "cost_usd": cost,
-                "n_candidates": n_candidates,
-            }
-        )
+        with self._lock:
+            self.entries.append(
+                {
+                    "stage": stage,
+                    "model": model,
+                    "input_tokens": input_tokens,
+                    "cache_creation_input_tokens": cache_creation_input_tokens,
+                    "cache_read_input_tokens": cache_read_input_tokens,
+                    "output_tokens": output_tokens,
+                    "cost_usd": cost,
+                    "n_candidates": n_candidates,
+                }
+            )
 
     def record_cache_hits(self, *, stage: str, n_hits: int) -> None:
         """Record candidates resolved from cache or deterministically (zero LLM cost).
@@ -114,17 +119,18 @@ class CostLedger:
         Kept separate from record() so cost_per_candidate_summary() can correctly
         include these in the denominator without inflating token counts.
         """
-        self.entries.append(
-            {
-                "stage": stage,
-                "model": None,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cost_usd": 0.0,
-                "n_candidates": n_hits,
-                "cache_hit": True,
-            }
-        )
+        with self._lock:
+            self.entries.append(
+                {
+                    "stage": stage,
+                    "model": None,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "n_candidates": n_hits,
+                    "cache_hit": True,
+                }
+            )
 
     def cost_per_candidate_summary(self) -> list[dict]:
         """Return per-stage cost-per-candidate breakdown.

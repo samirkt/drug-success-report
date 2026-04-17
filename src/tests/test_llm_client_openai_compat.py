@@ -366,3 +366,69 @@ class TestOpenAICompatHTTPErrors:
         )
         with pytest.raises(RuntimeError):
             client.complete_json("sys", "user", SAMPLE_SCHEMA)
+
+    def test_httpx_timeout_is_wrapped_as_runtime_error(self, caplog):
+        """A real httpx.TimeoutException must surface as a RuntimeError that
+        names the model and timeout, so failures are debuggable and the
+        adjudication stage's exception handling treats it as UNKNOWN."""
+        import logging
+        import httpx
+
+        class TimeoutClient:
+            def post(self, url, *, headers, json):
+                raise httpx.ReadTimeout("simulated timeout", request=None)
+
+            def close(self):
+                pass
+
+        client = OpenAICompatJSONClient(
+            base_url="http://localhost:11434/v1",
+            model="qwen2.5:14b-instruct",
+            timeout=42.0,
+            client=TimeoutClient(),
+        )
+        with caplog.at_level(logging.WARNING, logger="pipeline.fda.llm_client_openai_compat"):
+            with pytest.raises(RuntimeError) as exc_info:
+                client.complete_json("sys", "user", SAMPLE_SCHEMA)
+
+        msg = str(exc_info.value)
+        assert "qwen2.5:14b-instruct" in msg
+        assert "timeout=42.0s" in msg
+        assert any("qwen2.5:14b-instruct" in r.getMessage() for r in caplog.records)
+
+    def test_httpx_connect_error_is_wrapped(self):
+        """ConnectError (Ollama down) must also wrap to RuntimeError."""
+        import httpx
+
+        class DeadClient:
+            def post(self, url, *, headers, json):
+                raise httpx.ConnectError("connection refused", request=None)
+
+            def close(self):
+                pass
+
+        client = OpenAICompatJSONClient(
+            base_url="http://localhost:11434/v1",
+            model="qwen2.5:14b-instruct",
+            client=DeadClient(),
+        )
+        with pytest.raises(RuntimeError, match="LLM call failed"):
+            client.complete_json("sys", "user", SAMPLE_SCHEMA)
+
+    def test_non_httpx_error_propagates_unchanged(self):
+        """Errors that are not httpx.HTTPError must propagate as-is rather
+        than being mis-wrapped as LLM-call failures."""
+        class WeirdClient:
+            def post(self, url, *, headers, json):
+                raise ValueError("something else entirely")
+
+            def close(self):
+                pass
+
+        client = OpenAICompatJSONClient(
+            base_url="http://localhost:11434/v1",
+            model="qwen2.5:14b-instruct",
+            client=WeirdClient(),
+        )
+        with pytest.raises(ValueError, match="something else entirely"):
+            client.complete_json("sys", "user", SAMPLE_SCHEMA)

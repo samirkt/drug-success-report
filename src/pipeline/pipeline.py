@@ -40,12 +40,22 @@ from utils.tiered_router import CostLedger
 logger = logging.getLogger(__name__)
 
 # Defaults for the OpenAI-compatible LLM backend on the FDA-timeline
-# adjudication stage. Points at local Ollama serving Qwen 2.5 32B Instruct
-# — sized for a 36GB-unified-memory Mac (Q4_K_M weights ~19GB leave room
-# for the 30k-char extract context). Users can override via PipelineConfig
-# fields `fda_llm_base_url` and `fda_llm_model`, or via CLI flags.
+# adjudication stage. Points at local Ollama serving Qwen 2.5 14B Instruct
+# — sized for a 36GB-unified-memory Mac with headroom for parallel KV-cache
+# slots (Q4_K_M weights ~9GB). The pre-LLM section extractor in
+# `pipeline/fda/section_extract.py` keeps inputs ~1.5-3k chars, well within
+# the smaller model's strong-extraction range. Users can override via
+# `PipelineConfig.fda_llm_base_url` / `fda_llm_model`, or CLI flags. Pass
+# `--fda-llm-model qwen2.5:32b-instruct` to opt back into the larger model.
 DEFAULT_OPENAI_COMPAT_BASE_URL = "http://localhost:11434/v1"
-DEFAULT_OPENAI_COMPAT_MODEL = "qwen2.5:32b-instruct"
+DEFAULT_OPENAI_COMPAT_MODEL = "qwen2.5:14b-instruct"
+
+# Timeouts for the FDA-timeline adjudication stage. The LLM ceiling is
+# generous to absorb cold-prompt latency on local models without masking a
+# truly hung server; the HTTP ceiling matches FDAClient's prior hardcoded
+# default. Both surfaces are tunable via PipelineConfig and CLI flags.
+DEFAULT_FDA_LLM_TIMEOUT = 180.0
+DEFAULT_FDA_HTTP_TIMEOUT = 30.0
 
 
 @dataclass
@@ -101,6 +111,17 @@ class PipelineConfig:
     fda_llm_base_url: Optional[str] = None  # defaults when openai_compat and unset
     fda_llm_model: Optional[str] = None  # defaults when openai_compat and unset
     fda_llm_api_key: Optional[str] = None  # optional; local Ollama needs none
+
+    # Performance & timeout knobs for the FDA-timeline stage.
+    # `fda_adjudication_workers > 1` enables candidate-level parallelism via
+    # ThreadPoolExecutor. Set <= your Ollama `OLLAMA_NUM_PARALLEL` setting;
+    # raising past that just queues at the server. Default 1 preserves the
+    # previous strictly-sequential behavior for users who haven't configured
+    # Ollama for parallelism. Timeouts are surfaced so a hung HTTP fetch or
+    # slow LLM call cannot wedge the whole run.
+    fda_adjudication_workers: int = 1
+    fda_llm_timeout: float = DEFAULT_FDA_LLM_TIMEOUT
+    fda_http_timeout: float = DEFAULT_FDA_HTTP_TIMEOUT
 
     # Knowledge cache
     cache_path: str | None = "knowledge_cache.db"
@@ -409,6 +430,7 @@ class Pipeline:
             fda = FDAClient(
                 cache_dir=cfg.fda_cache_dir,
                 openfda_api_key=cfg.openfda_api_key or os.getenv("OPENFDA_API_KEY"),
+                timeout=cfg.fda_http_timeout,
             )
 
             backend = cfg.fda_llm_backend
@@ -428,13 +450,18 @@ class Pipeline:
                     base_url=base_url,
                     model=model,
                     api_key=cfg.fda_llm_api_key,
+                    timeout=cfg.fda_llm_timeout,
                     cache=cache,
                     ledger=self._ledger,
                 )
                 logger.info(
-                    "FDA adjudication using openai_compat backend: %s @ %s",
+                    "FDA adjudication using openai_compat backend: %s @ %s "
+                    "(workers=%d, llm_timeout=%.0fs, http_timeout=%.0fs)",
                     model,
                     base_url,
+                    cfg.fda_adjudication_workers,
+                    cfg.fda_llm_timeout,
+                    cfg.fda_http_timeout,
                 )
             else:
                 raise ValueError(
@@ -450,6 +477,7 @@ class Pipeline:
                     failure_window_days=cfg.fda_failure_window_days,
                 ),
                 cache=cache,
+                workers=cfg.fda_adjudication_workers,
             )
         raise ValueError(
             f"Unknown adjudication_method: {method!r}. "

@@ -192,6 +192,61 @@ class TestCostLedger:
         # Same as before: $3 + $15 = $18
         assert abs(ledger.total_cost_usd - 18.0) < 0.001
 
+    def test_concurrent_record_preserves_all_entries(self):
+        """8 threads x 100 records each must yield exactly 800 entries.
+
+        Without the lock around `entries.append`, contention can cause
+        dropped or duplicated entries on some Python implementations.
+        """
+        import threading
+
+        ledger = CostLedger()
+        per_thread = 100
+        n_threads = 8
+
+        def worker(stage_label):
+            for _ in range(per_thread):
+                ledger.record(
+                    stage=stage_label,
+                    model=MODEL_SONNET,
+                    input_tokens=1,
+                    output_tokens=1,
+                    n_candidates=1,
+                )
+
+        threads = [
+            threading.Thread(target=worker, args=(f"stage_{i}",))
+            for i in range(n_threads)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(ledger.entries) == n_threads * per_thread
+        # Each stage should have exactly per_thread entries
+        from collections import Counter
+        stage_counts = Counter(e["stage"] for e in ledger.entries)
+        assert all(count == per_thread for count in stage_counts.values())
+
+    def test_concurrent_record_cache_hits_preserved(self):
+        """record_cache_hits is also lock-protected."""
+        import threading
+
+        ledger = CostLedger()
+
+        def worker():
+            for _ in range(50):
+                ledger.record_cache_hits(stage="cached", n_hits=1)
+
+        threads = [threading.Thread(target=worker) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(ledger.entries) == 200
+
 
 # ===================================================================
 # 2. Escalation predicate tests

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from typing import Any, Optional
 
 from ._json_parse import parse_json_object
@@ -60,6 +61,7 @@ class OpenAICompatJSONClient:
         self.stage_label = stage_label
         self.cache_hits = 0
         self.cache_misses = 0
+        self._counter_lock = threading.Lock()
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -79,9 +81,11 @@ class OpenAICompatJSONClient:
             )
             cached = self.cache.get_llm_json(key)
             if cached is not None:
-                self.cache_hits += 1
+                with self._counter_lock:
+                    self.cache_hits += 1
                 return cached
-            self.cache_misses += 1
+            with self._counter_lock:
+                self.cache_misses += 1
         else:
             key = None
 
@@ -106,13 +110,25 @@ class OpenAICompatJSONClient:
             "temperature": 0,
         }
 
-        response = self._client.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=body,
-        )
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = self._client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=body,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            if _is_httpx_error(e):
+                logger.warning(
+                    "LLM HTTP call failed (model=%s, base_url=%s, timeout=%.1fs): %s",
+                    self.model, self.base_url, self.timeout, e,
+                )
+                raise RuntimeError(
+                    f"LLM call failed (model={self.model}, "
+                    f"timeout={self.timeout}s): {e}"
+                ) from e
+            raise
 
         self._record_usage(data)
 
@@ -134,6 +150,20 @@ class OpenAICompatJSONClient:
             output_tokens=int(usage.get("completion_tokens") or 0),
             n_candidates=1,
         )
+
+
+def _is_httpx_error(exc: BaseException) -> bool:
+    """Best-effort check that an exception originated from httpx.
+
+    Imported lazily so test paths that inject a fake HTTP client don't
+    require httpx to be installed. Returns False on any import failure
+    (causing the original exception to propagate unchanged).
+    """
+    try:
+        import httpx  # type: ignore[import-not-found]
+    except ImportError:
+        return False
+    return isinstance(exc, httpx.HTTPError)
 
 
 def _extract_content(data: dict) -> str:

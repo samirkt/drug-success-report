@@ -31,7 +31,9 @@ Outcome resolution (per Candidate):
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
@@ -76,6 +78,7 @@ class AdjudicationStage:
         llm_client: LLMClient,
         config: Optional[AdjudicationConfig] = None,
         cache=None,  # pipeline.knowledge_cache.KnowledgeCache | None
+        workers: int = 1,
     ):
         self.fda = fda_client
         self.adjudicator = IndicationAdjudicator(llm_client)
@@ -83,10 +86,15 @@ class AdjudicationStage:
         self.commercial = CommercialStatusChecker(self.fda)
         self.config = config or AdjudicationConfig()
         self.cache = cache
+        self.workers = max(1, int(workers))
 
         # Cache timelines across candidates that share a drug. Many
         # candidates in a CandidateTable differ only by indication.
         self._timeline_cache: dict[str, DrugApprovalTimeline] = {}
+        # Per-drug locks deduplicate concurrent timeline builds for the
+        # same drug; the outer lock guards the lock-dict itself.
+        self._timeline_locks: dict[str, threading.Lock] = {}
+        self._timeline_locks_dict_lock = threading.Lock()
 
     def run(self, candidates: CandidateTable) -> OutcomeTable:
         table = OutcomeTable()
@@ -96,29 +104,29 @@ class AdjudicationStage:
         misses_at_start = getattr(llm, "cache_misses", 0)
         run_start = time.monotonic()
 
-        logger.info("FDA adjudication: %d candidate(s) to process", n)
-        for i, candidate in enumerate(candidates.candidates, start=1):
-            c_start = time.monotonic()
-            try:
-                record = self._adjudicate(candidate)
-            except Exception as e:
-                logger.exception(
-                    "Adjudication failed for candidate %s: %s",
-                    candidate.candidate_id,
-                    e,
-                )
-                record = self._error_record(candidate, str(e))
-            elapsed = time.monotonic() - c_start
-            logger.info(
-                "[%d/%d] %s | %s -> %s (%.1fs)",
-                i, n,
-                _truncate(candidate.drug_name, 30),
-                _truncate(candidate.indication, 40),
-                record.outcome.value,
-                elapsed,
-            )
-            table.outcomes[record.candidate_id] = record
-            self._cache_outcome(candidate, record)
+        logger.info(
+            "FDA adjudication: %d candidate(s) to process (workers=%d)",
+            n, self.workers,
+        )
+
+        if self.workers <= 1 or n <= 1:
+            for i, candidate in enumerate(candidates.candidates, start=1):
+                record, elapsed = self._run_one(candidate)
+                self._log_progress(i, n, candidate, record, elapsed)
+                table.outcomes[record.candidate_id] = record
+                self._cache_outcome(candidate, record)
+        else:
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                future_to_candidate = {
+                    executor.submit(self._run_one, candidate): candidate
+                    for candidate in candidates.candidates
+                }
+                for i, future in enumerate(as_completed(future_to_candidate), start=1):
+                    candidate = future_to_candidate[future]
+                    record, elapsed = future.result()
+                    self._log_progress(i, n, candidate, record, elapsed)
+                    table.outcomes[record.candidate_id] = record
+                    self._cache_outcome(candidate, record)
 
         total_elapsed = time.monotonic() - run_start
         if llm is not None and hasattr(llm, "cache_hits"):
@@ -133,6 +141,41 @@ class AdjudicationStage:
         else:
             logger.info("FDA adjudication complete in %.1fs.", total_elapsed)
         return table
+
+    def _run_one(self, candidate: Candidate) -> tuple[CandidateOutcomeRecord, float]:
+        """Execute one candidate adjudication; return (record, elapsed_seconds).
+
+        Always returns a record — exceptions are converted to UNKNOWN here so
+        a single failing candidate cannot poison the parallel pool.
+        """
+        c_start = time.monotonic()
+        try:
+            record = self._adjudicate(candidate)
+        except Exception as e:
+            logger.exception(
+                "Adjudication failed for candidate %s: %s",
+                candidate.candidate_id,
+                e,
+            )
+            record = self._error_record(candidate, str(e))
+        return record, time.monotonic() - c_start
+
+    def _log_progress(
+        self,
+        i: int,
+        n: int,
+        candidate: Candidate,
+        record: CandidateOutcomeRecord,
+        elapsed: float,
+    ) -> None:
+        logger.info(
+            "[%d/%d] %s | %s -> %s (%.1fs)",
+            i, n,
+            _truncate(candidate.drug_name, 30),
+            _truncate(candidate.indication, 40),
+            record.outcome.value,
+            elapsed,
+        )
 
     def _cache_outcome(self, candidate: Candidate, record: CandidateOutcomeRecord) -> None:
         """Persist the outcome to fda_adjudication_cache so the candidate summary
@@ -253,11 +296,18 @@ class AdjudicationStage:
 
     def _get_timeline(self, drug_name: str) -> DrugApprovalTimeline:
         key = drug_name.lower().strip()
-        if key in self._timeline_cache:
-            return self._timeline_cache[key]
-        timeline = self.timeline_builder.build(drug_name)
-        self._timeline_cache[key] = timeline
-        return timeline
+        cached = self._timeline_cache.get(key)
+        if cached is not None:
+            return cached
+        with self._timeline_locks_dict_lock:
+            per_drug_lock = self._timeline_locks.setdefault(key, threading.Lock())
+        with per_drug_lock:
+            cached = self._timeline_cache.get(key)
+            if cached is not None:
+                return cached
+            timeline = self.timeline_builder.build(drug_name)
+            self._timeline_cache[key] = timeline
+            return timeline
 
     def _is_match_positive(self, match: MatchResult) -> bool:
         return match.verdict == "APPROVED"

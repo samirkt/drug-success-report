@@ -390,6 +390,158 @@ class TestFDAAdjudicationCache:
 
 
 # ---------------------------------------------------------------------------
+# Candidate-level parallelism
+# ---------------------------------------------------------------------------
+
+
+class _CountingTimelineBuilder:
+    """Wraps a real TimelineBuilder so we can count `build()` calls per drug.
+
+    Sleeps briefly to widen the race window for the per-drug-lock test.
+    """
+
+    def __init__(self, real_builder, sleep_seconds: float = 0.05):
+        self._real = real_builder
+        self._sleep = sleep_seconds
+        import threading
+        self.calls_per_drug: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def build(self, drug_name: str):
+        import time as _time
+        with self._lock:
+            self.calls_per_drug[drug_name] = self.calls_per_drug.get(drug_name, 0) + 1
+        _time.sleep(self._sleep)  # widen race window
+        return self._real.build(drug_name)
+
+
+class TestAdjudicationStageParallelism:
+    """Confirm workers > 1 yields correct outcomes and per-drug timeline dedup."""
+
+    def _make_parallel_stage(self, fda, llm, workers, cache=None):
+        adjudicator = IndicationAdjudicator(llm)
+        timeline_builder = TimelineBuilder(fda, adjudicator, pdf_extractor=_fake_pdf_extractor)
+        commercial = CommercialStatusChecker(fda)
+        stage = AdjudicationStage(
+            fda_client=fda, llm_client=llm, cache=cache, workers=workers,
+        )
+        stage.timeline_builder = timeline_builder
+        stage.commercial = commercial
+        return stage
+
+    def test_parallel_run_processes_all_candidates(self):
+        stage = self._make_parallel_stage(FakeFDA(), FakeLLM(), workers=4)
+        candidates = CandidateTable(candidates=[
+            Candidate(
+                candidate_id=f"c{i}",
+                drug_name="pembrolizumab",
+                indication="Non-small cell lung cancer",
+                mesh_indication="Carcinoma, Non-Small-Cell Lung",
+                highest_phase=TrialPhase.PHASE_3,
+                trial_ids=[f"NCT{i:08d}"],
+            )
+            for i in range(8)
+        ])
+
+        outcomes = stage.run(candidates)
+
+        assert len(outcomes.outcomes) == 8
+        for cid in [f"c{i}" for i in range(8)]:
+            assert outcomes.outcomes[cid].outcome == CandidateOutcome.COMMERCIALIZED
+
+    def test_parallel_run_dedups_timeline_per_drug(self):
+        """12 candidates across 3 distinct drugs with 4 workers → exactly
+        3 timeline builds (one per drug), even though threads race."""
+        # Use an FDA fake that responds to multiple drug names
+        class MultiDrugFDA(FakeFDA):
+            def find_applications_by_drug(self, drug_name: str):
+                lower = drug_name.lower()
+                if lower in {"pembrolizumab", "nivolumab", "atezolizumab"}:
+                    return [self._approved_app]
+                return []
+
+        fda = MultiDrugFDA()
+        adjudicator = IndicationAdjudicator(FakeLLM())
+        real_builder = TimelineBuilder(fda, adjudicator, pdf_extractor=_fake_pdf_extractor)
+        counting_builder = _CountingTimelineBuilder(real_builder, sleep_seconds=0.05)
+
+        stage = AdjudicationStage(
+            fda_client=fda, llm_client=FakeLLM(), cache=None, workers=4,
+        )
+        stage.timeline_builder = counting_builder
+        stage.commercial = CommercialStatusChecker(fda)
+
+        drugs = ["pembrolizumab", "nivolumab", "atezolizumab"]
+        candidates = CandidateTable(candidates=[
+            Candidate(
+                candidate_id=f"c{i}",
+                drug_name=drugs[i % 3],
+                indication="Non-small cell lung cancer",
+                mesh_indication="Carcinoma, Non-Small-Cell Lung",
+                highest_phase=TrialPhase.PHASE_3,
+                trial_ids=[f"NCT{i:08d}"],
+            )
+            for i in range(12)
+        ])
+
+        outcomes = stage.run(candidates)
+
+        assert len(outcomes.outcomes) == 12
+        # Per-drug lock guarantees each unique drug's timeline is built exactly once
+        assert counting_builder.calls_per_drug == {
+            "pembrolizumab": 1, "nivolumab": 1, "atezolizumab": 1,
+        }
+
+    def test_parallel_run_isolates_failing_candidate(self):
+        """A single raising candidate must not poison the whole pool."""
+        class SometimesRaisingFDA(FakeFDA):
+            def find_applications_by_drug(self, drug_name: str):
+                if drug_name.lower() == "raising_drug":
+                    raise RuntimeError("simulated outage for one drug")
+                return super().find_applications_by_drug(drug_name)
+
+        stage = self._make_parallel_stage(SometimesRaisingFDA(), FakeLLM(), workers=4)
+        candidates = CandidateTable(candidates=[
+            Candidate(
+                candidate_id="ok1",
+                drug_name="pembrolizumab",
+                indication="Non-small cell lung cancer",
+                mesh_indication="Carcinoma, Non-Small-Cell Lung",
+                highest_phase=TrialPhase.PHASE_3,
+                trial_ids=["NCT1"],
+            ),
+            Candidate(
+                candidate_id="bad",
+                drug_name="raising_drug",
+                indication="Anything",
+                mesh_indication=None,
+                highest_phase=TrialPhase.PHASE_2,
+                trial_ids=["NCT2"],
+                latest_completion_date=date(2010, 1, 1),
+            ),
+            Candidate(
+                candidate_id="ok2",
+                drug_name="pembrolizumab",
+                indication="Non-small cell lung cancer",
+                mesh_indication="Carcinoma, Non-Small-Cell Lung",
+                highest_phase=TrialPhase.PHASE_3,
+                trial_ids=["NCT3"],
+            ),
+        ])
+
+        outcomes = stage.run(candidates)
+
+        assert outcomes.outcomes["ok1"].outcome == CandidateOutcome.COMMERCIALIZED
+        assert outcomes.outcomes["bad"].outcome == CandidateOutcome.UNKNOWN
+        assert outcomes.outcomes["ok2"].outcome == CandidateOutcome.COMMERCIALIZED
+
+    def test_workers_clamped_to_minimum_of_one(self):
+        """workers=0 or negative is silently clamped to 1 (sequential)."""
+        stage = self._make_parallel_stage(FakeFDA(), FakeLLM(), workers=0)
+        assert stage.workers == 1
+
+
+# ---------------------------------------------------------------------------
 # Live integration (gated)
 # ---------------------------------------------------------------------------
 

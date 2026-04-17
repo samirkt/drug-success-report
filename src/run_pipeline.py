@@ -21,6 +21,42 @@ logging.getLogger().addHandler(
 logging.getLogger().handlers[-1].setFormatter(logging.Formatter(_LOG_FORMAT))
 
 
+def _resolve_perf_overrides(args: argparse.Namespace) -> dict:
+    """CLI flag → env var → omit (let PipelineConfig defaults apply).
+
+    Three knobs share this resolution shape:
+      --fda-adjudication-workers / FDA_ADJUDICATION_WORKERS
+      --fda-llm-timeout          / FDA_LLM_TIMEOUT
+      --fda-http-timeout         / FDA_HTTP_TIMEOUT
+    """
+    out: dict = {}
+    workers = args.fda_adjudication_workers
+    if workers is None:
+        env_workers = os.getenv("FDA_ADJUDICATION_WORKERS")
+        if env_workers:
+            workers = int(env_workers)
+    if workers is not None:
+        out["fda_adjudication_workers"] = workers
+
+    llm_timeout = args.fda_llm_timeout
+    if llm_timeout is None:
+        env_llm_timeout = os.getenv("FDA_LLM_TIMEOUT")
+        if env_llm_timeout:
+            llm_timeout = float(env_llm_timeout)
+    if llm_timeout is not None:
+        out["fda_llm_timeout"] = llm_timeout
+
+    http_timeout = args.fda_http_timeout
+    if http_timeout is None:
+        env_http_timeout = os.getenv("FDA_HTTP_TIMEOUT")
+        if env_http_timeout:
+            http_timeout = float(env_http_timeout)
+    if http_timeout is not None:
+        out["fda_http_timeout"] = http_timeout
+
+    return out
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the peptide research pipeline.")
     parser.add_argument("--source", choices=["api", "aact"], default="aact",
@@ -144,6 +180,32 @@ def parse_args() -> argparse.Namespace:
         help="Optional API key for the OpenAI-compatible endpoint. Falls "
              "back to FDA_LLM_API_KEY env var. Not needed for local Ollama.",
     )
+    parser.add_argument(
+        "--fda-adjudication-workers",
+        type=int,
+        default=None,
+        help="Candidate-level parallelism for FDA-timeline adjudication. "
+             "Default 1 (sequential). Set <= your Ollama OLLAMA_NUM_PARALLEL "
+             "setting; raising past that just queues at the server. On a 36GB "
+             "M3 Max with the default qwen2.5:14b-instruct model, "
+             "OLLAMA_NUM_PARALLEL=4 + --fda-adjudication-workers 4 is the "
+             "sweet spot. Falls back to FDA_ADJUDICATION_WORKERS env var.",
+    )
+    parser.add_argument(
+        "--fda-llm-timeout",
+        type=float,
+        default=None,
+        help="Per-call LLM timeout in seconds for FDA-timeline adjudication "
+             "(default 180). On timeout the candidate is recorded as UNKNOWN "
+             "and the run continues. Falls back to FDA_LLM_TIMEOUT env var.",
+    )
+    parser.add_argument(
+        "--fda-http-timeout",
+        type=float,
+        default=None,
+        help="Per-call HTTP timeout in seconds for openFDA / DailyMed fetches "
+             "(default 30). Falls back to FDA_HTTP_TIMEOUT env var.",
+    )
     return parser.parse_args()
 
 
@@ -194,6 +256,7 @@ def main() -> None:
         fda_llm_base_url=args.fda_llm_base_url or os.getenv("FDA_LLM_BASE_URL"),
         fda_llm_model=args.fda_llm_model or os.getenv("FDA_LLM_MODEL"),
         fda_llm_api_key=args.fda_llm_api_key or os.getenv("FDA_LLM_API_KEY"),
+        **_resolve_perf_overrides(args),
     )
 
     pipeline = Pipeline(config)
