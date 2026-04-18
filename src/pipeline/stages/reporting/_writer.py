@@ -7,7 +7,13 @@ import os
 
 import numpy as np
 
-from ...models import ReportOutput
+from ...models import (
+    AttributeTable,
+    CandidateTable,
+    OutcomeTable,
+    ReportOutput,
+    TrialTable,
+)
 from . import _compute
 
 
@@ -51,6 +57,112 @@ def write_csv(report: ReportOutput, output_path: str) -> None:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_trial_detail(
+    candidate_table: CandidateTable,
+    attribute_table: AttributeTable,
+    outcome_table: OutcomeTable,
+    trial_table: TrialTable | None,
+    output_path: str,
+) -> None:
+    """Write a (candidate × trial) CSV for debugging classification and clustering.
+
+    One row per constituent trial. Each row shows both the candidate-level
+    canonical drug/indication and classification tags and the trial-level
+    raw AACT intervention/indication strings plus MeSH terms, so that a
+    reader can vet whether the clustering merged the right trials and whether
+    the modality/disease-area classification is consistent with the trial
+    evidence.
+    """
+    import csv
+
+    if trial_table is None:
+        return
+
+    trial_index = {t.nct_id: t for t in trial_table.trials}
+
+    headers = [
+        "candidate_id",
+        "candidate_drug",
+        "candidate_drug_raw",
+        "candidate_indication",
+        "candidate_modality",
+        "candidate_disease_area",
+        "candidate_outcome",
+        "candidate_highest_phase",
+        "candidate_drugbank_id",
+        "candidate_mesh_drug",
+        "candidate_mesh_indication",
+        "nct_id",
+        "trial_intervention",
+        "trial_indication",
+        "trial_phase",
+        "trial_status",
+        "trial_mesh_intervention_terms",
+        "trial_mesh_condition_terms",
+        "trial_mesh_condition_tree_numbers",
+        "trial_start_date",
+        "trial_completion_date",
+        "trial_is_single_arm",
+        "trial_sponsor",
+        "trial_title",
+    ]
+
+    csv_path = os.path.join(output_path, "trial_detail.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+
+        for c in candidate_table.candidates:
+            attrs = attribute_table.attributes.get(c.candidate_id)
+            out = outcome_table.outcomes.get(c.candidate_id)
+
+            cand_cols = {
+                "candidate_id": c.candidate_id,
+                "candidate_drug": c.drug_name,
+                "candidate_drug_raw": c.drug_name_raw,
+                "candidate_indication": c.indication,
+                "candidate_modality": attrs.drug_modality if attrs else "",
+                "candidate_disease_area": attrs.disease_area if attrs else "",
+                "candidate_outcome": out.outcome.value if out else "",
+                "candidate_highest_phase": c.highest_phase.value,
+                "candidate_drugbank_id": c.drugbank_id or "",
+                "candidate_mesh_drug": c.mesh_drug or "",
+                "candidate_mesh_indication": c.mesh_indication or "",
+            }
+
+            if not c.trial_ids:
+                writer.writerow({**cand_cols, **{h: "" for h in headers if h not in cand_cols}})
+                continue
+
+            for nct in c.trial_ids:
+                t = trial_index.get(nct)
+                if t is None:
+                    writer.writerow({
+                        **cand_cols,
+                        "nct_id": nct,
+                        **{h: "" for h in headers
+                           if h not in cand_cols and h != "nct_id"},
+                    })
+                    continue
+
+                writer.writerow({
+                    **cand_cols,
+                    "nct_id": t.nct_id,
+                    "trial_intervention": t.intervention,
+                    "trial_indication": t.indication,
+                    "trial_phase": t.phase.value,
+                    "trial_status": t.status.value,
+                    "trial_mesh_intervention_terms": "|".join(t.mesh_intervention_terms),
+                    "trial_mesh_condition_terms": "|".join(t.mesh_condition_terms),
+                    "trial_mesh_condition_tree_numbers": "|".join(t.mesh_condition_tree_numbers),
+                    "trial_start_date": t.start_date.isoformat() if t.start_date else "",
+                    "trial_completion_date": t.completion_date.isoformat() if t.completion_date else "",
+                    "trial_is_single_arm": "true" if t.is_single_arm else "false",
+                    "trial_sponsor": t.sponsor,
+                    "trial_title": t.title,
+                })
 
 
 def write_html(

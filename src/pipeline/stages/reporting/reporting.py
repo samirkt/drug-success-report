@@ -20,7 +20,7 @@ from ...models import (
 from . import _compute, _narrative
 from ._composer import ReportComposer
 from ._types import ReportContext
-from ._writer import write_report
+from ._writer import write_report, write_trial_detail
 
 
 class ReportingStage:
@@ -132,6 +132,13 @@ class ReportingStage:
                 sections=sections,
                 exec_summary=exec_summary,
                 introduction=introduction,
+            )
+            write_trial_detail(
+                candidate_table=candidate_table,
+                attribute_table=attribute_table,
+                outcome_table=outcome_table,
+                trial_table=trial_table,
+                output_path=self.output_path,
             )
 
         return report
