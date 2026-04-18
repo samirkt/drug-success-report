@@ -237,8 +237,10 @@ class TestClusterDrugBankResolution:
         assert set(merged.trial_ids) == {"NCT001", "NCT002"}
         assert merged.highest_phase == TrialPhase.PHASE_2
 
-    def test_no_first_word_overreach(self, tmp_path):
-        """A DrugBank-free row whose first token matches a DrugBank entry must not merge."""
+    def test_first_word_groups_unresolved_variants_into_name_tier(self, tmp_path):
+        """Plain "insulin" resolves to DrugBank; "insulin lispro" falls through
+        to the first-word fallback and lands in the ``("name", "insulin")``
+        tier — two separate candidates, NOT one merged DB cluster."""
         csv = _write_drugbank_csv(tmp_path)  # has 'insulin' = DB00050
         stage = CandidateClusteringStage(drugbank_csv_path=csv)
         trials = TrialTable(trials=[
@@ -248,9 +250,85 @@ class TestClusterDrugBankResolution:
 
         result = stage.run(trials)
 
-        # "insulin" matches DB00050; "insulin lispro" has no exact match and
-        # the first-word fallback is gone, so they stay separate.
         assert len(result) == 2
+        by_prefix = {
+            c.candidate_id.split("__")[0]: c for c in result.candidates
+        }
+        assert "db:DB00050" in by_prefix
+        assert by_prefix["db:DB00050"].drugbank_id == "DB00050"
+        assert by_prefix["db:DB00050"].trial_ids == ["NCT001"]
+        assert "name:insulin" in by_prefix
+        assert by_prefix["name:insulin"].drugbank_id is None
+        assert by_prefix["name:insulin"].trial_ids == ["NCT002"]
+
+    def test_first_word_groups_same_prefix_unresolved_together(self, tmp_path):
+        """Two different insulin variants ("lispro", "aspart"), neither an
+        exact DrugBank match, share the same first-word fallback key."""
+        csv = _write_drugbank_csv(tmp_path)  # has 'insulin' = DB00050
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        trials = TrialTable(trials=[
+            _trial("NCT001", "insulin lispro", indication="diabetes"),
+            _trial("NCT002", "insulin aspart", indication="diabetes"),
+        ])
+
+        result = stage.run(trials)
+
+        assert len(result) == 1
+        only = result.candidates[0]
+        assert only.drugbank_id is None
+        assert only.candidate_id.startswith("name:insulin__")
+        assert set(only.trial_ids) == {"NCT001", "NCT002"}
+
+    def test_first_word_fallback_requires_known_drugbank_head(self, tmp_path):
+        """Stopword-collapse guard: a first word that is NOT in DrugBank
+        must not trigger the fallback. "small molecule alpha" and "small
+        molecule beta" stay separate."""
+        csv = _write_drugbank_csv(tmp_path)  # does not list 'small'
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        trials = TrialTable(trials=[
+            _trial("NCT001", "small molecule alpha", indication="diabetes"),
+            _trial("NCT002", "small molecule beta", indication="diabetes"),
+        ])
+
+        result = stage.run(trials)
+
+        assert len(result) == 2
+        for cand in result.candidates:
+            assert cand.drugbank_id is None
+            assert not cand.candidate_id.startswith("name:small__")
+
+    def test_first_word_fallback_skipped_for_single_token(self, tmp_path):
+        """A one-token unresolved row_norm is left alone — no point re-
+        looking-up the already-failed row_norm as its own first word."""
+        csv = _write_drugbank_csv(tmp_path)  # does not list 'lispro'
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        trials = TrialTable(trials=[_trial("NCT001", "lispro", indication="diabetes")])
+
+        result = stage.run(trials)
+
+        assert len(result) == 1
+        assert result.candidates[0].candidate_id.startswith("name:lispro__")
+
+    def test_first_word_fallback_does_not_hijack_db_cluster(self, tmp_path):
+        """The variant rows must NOT be pulled into the ``("db", DB00050)``
+        cluster for plain "insulin" — they live in a parallel name-tier
+        cluster keyed on the shared first word."""
+        csv = _write_drugbank_csv(tmp_path)  # has 'insulin' = DB00050
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        trials = TrialTable(trials=[
+            _trial("NCT001", "insulin", indication="diabetes"),
+            _trial("NCT002", "insulin lispro", indication="diabetes"),
+            _trial("NCT003", "insulin aspart", indication="diabetes"),
+        ])
+
+        result = stage.run(trials)
+
+        assert len(result) == 2
+        by_prefix = {
+            c.candidate_id.split("__")[0]: c for c in result.candidates
+        }
+        assert by_prefix["db:DB00050"].trial_ids == ["NCT001"]
+        assert set(by_prefix["name:insulin"].trial_ids) == {"NCT002", "NCT003"}
 
 
 # ---------------------------------------------------------------------------

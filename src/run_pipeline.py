@@ -92,6 +92,17 @@ def parse_args() -> argparse.Namespace:
         help="Path to the knowledge cache SQLite file. Pass empty string to disable.",
     )
     parser.add_argument(
+        "--drop-uncached-candidates",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Dev hack: drop candidates whose adjudication key isn't already "
+             "in the knowledge cache (right after clustering/year-range "
+             "filtering). Lets you iterate on clustering without burning LLM "
+             "credits; outputs only cover previously-adjudicated drugs. "
+             "Pass --no-drop-uncached-candidates to force-disable. "
+             "When unset, the PipelineConfig default applies.",
+    )
+    parser.add_argument(
         "--drugbank-csv",
         default=None,
         metavar="PATH",
@@ -263,6 +274,8 @@ def main() -> None:
         fda_llm_base_url=args.fda_llm_base_url or os.getenv("FDA_LLM_BASE_URL"),
         fda_llm_model=args.fda_llm_model or os.getenv("FDA_LLM_MODEL"),
         fda_llm_api_key=args.fda_llm_api_key or os.getenv("FDA_LLM_API_KEY"),
+        **({"drop_uncached_candidates": args.drop_uncached_candidates}
+           if args.drop_uncached_candidates is not None else {}),
         **_resolve_perf_overrides(args),
     )
 

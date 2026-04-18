@@ -69,7 +69,14 @@ def _resolve_drug_key(
        drug name; try DrugBank + synonym lookups on that leaf.
     4. If step 3 selected a leaf but no DrugBank match, return the leaf as
        a ``("mesh", ...)`` key.
-    5. Fall back to ``("name", row_norm)``.
+    5. First-word fallback: if ``row_norm`` has >=2 tokens and its first
+       token is itself a known DrugBank ``query_norm``, return
+       ``("name", first_word)``. This groups unresolved variants (e.g.
+       "insulin lispro" + "insulin aspart") into a shared name-tier cluster
+       **without** hijacking the ``("db", ...)`` cluster that claims the
+       parent drug. The first-word-in-DrugBank guard prevents stopword
+       collapse (e.g. "small molecule X" does NOT land in ``("name", "small")``).
+    6. Fall back to ``("name", row_norm)``.
     """
     row_norm = canonicalize(trial.intervention)
 
@@ -91,6 +98,10 @@ def _resolve_drug_key(
         if db_id:
             return ("db", db_id)
         return ("mesh", leaf_norm)
+
+    tokens = row_norm.split()
+    if len(tokens) >= 2 and tokens[0] in db_norm_to_id:
+        return ("name", tokens[0])
 
     return ("name", row_norm)
 

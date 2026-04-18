@@ -124,6 +124,13 @@ class PipelineConfig:
 
     # Knowledge cache
     cache_path: str | None = "knowledge_cache.db"
+    # Temporary dev hack: when True, candidates whose adjudication key isn't
+    # already in the knowledge cache are dropped from CandidateTable right
+    # after clustering (and year-range filtering). They disappear from the
+    # funnel and all CSV outputs — "what do I already know about" mode for
+    # fast clustering iteration without burning LLM credits. Remove once
+    # clustering stabilizes.
+    drop_uncached_candidates: bool = True
 
     # AACT (clinical trials DB) fetch cache — dev convenience to skip re-hitting AACT
     use_ct_cache: bool = False
@@ -216,6 +223,9 @@ class Pipeline:
         logger.info("Stage 2/5 — Candidate Clustering")
         result.candidate_table = self._run_clustering(result.trial_table)
         result.candidate_table = self._filter_by_year_range(result.candidate_table)
+        result.candidate_table, result.trial_table = self._filter_to_cached_candidates(
+            result.candidate_table, result.trial_table
+        )
         result.candidate_table, result.trial_table = self._sample_candidates(
             result.candidate_table, result.trial_table
         )
@@ -275,6 +285,54 @@ class Pipeline:
             start_yr, end_yr, len(filtered), len(candidate_table.candidates),
         )
         return CandidateTable(candidates=filtered)
+
+    def _filter_to_cached_candidates(
+        self,
+        candidate_table: CandidateTable,
+        trial_table: TrialTable,
+    ) -> tuple[CandidateTable, TrialTable]:
+        """Drop candidates whose adjudication key isn't already cached.
+
+        Temporary dev hack (see ``PipelineConfig.drop_uncached_candidates``):
+        when enabled, inspects the adjudication cache for each candidate and
+        keeps only the ones that already have a stored outcome, pruning
+        ``trial_table`` to the matching trials. Lets clustering iteration run
+        end-to-end against previously-adjudicated drugs only, with zero LLM
+        spend.
+        """
+        if not self.config.drop_uncached_candidates:
+            return candidate_table, trial_table
+        if self._cache is None:
+            logger.warning(
+                "drop_uncached_candidates set but no knowledge cache configured — "
+                "skipping filter."
+            )
+            return candidate_table, trial_table
+
+        from .knowledge_cache import KnowledgeCache
+
+        method = self.config.adjudication_method
+        cache = self._cache
+
+        def _is_cached(cand) -> bool:
+            key = KnowledgeCache.make_adjudication_key(
+                cand.drug_name, cand.indication, cand.highest_phase.value,
+            )
+            if method == "fda_timeline":
+                return cache.get_fda_outcome(key, cand.candidate_id) is not None
+            return cache.get_outcome(key, cand.candidate_id) is not None
+
+        kept = [c for c in candidate_table.candidates if _is_cached(c)]
+        allowed_nct_ids = {nct for c in kept for nct in c.trial_ids}
+        pruned_trials = [t for t in trial_table.trials if t.nct_id in allowed_nct_ids]
+
+        logger.info(
+            "drop_uncached_candidates (%s): %d / %d candidates kept, %d / %d trials retained",
+            method,
+            len(kept), len(candidate_table.candidates),
+            len(pruned_trials), len(trial_table.trials),
+        )
+        return CandidateTable(candidates=kept), TrialTable(trials=pruned_trials)
 
     def _sample_candidates(
         self,
@@ -387,6 +445,7 @@ class Pipeline:
         if cfg.cache_path is not None:
             from .knowledge_cache import KnowledgeCache
             cache = KnowledgeCache(cfg.cache_path)
+        self._cache = cache
 
         ct_cache = None
         if cfg.use_ct_cache:
