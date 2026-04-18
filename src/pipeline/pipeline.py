@@ -79,10 +79,6 @@ class PipelineConfig:
     max_candidates: int | None = None
     sample_seed: int = 42
 
-    # Clustering
-    clustering_method: str = "hybrid" # "embeddings" | "fuzzy" | "hybrid"
-    llm_adjudicate_clusters: bool = True
-
     # Classification
     use_literature_lookup: bool = True
 
@@ -135,11 +131,6 @@ class PipelineConfig:
 
     # DrugBank normalization / deduplication
     drugbank_csv_path: Optional[Path] = None
-    # ClinSR-aligned default: retain candidates that lack a DrugBank match
-    # and lack a MeSH intervention term so that novel biologics, early
-    # peptides, and codename-only compounds are not silently dropped from
-    # the analysis. Flip to True to restore the stricter legacy behavior.
-    drop_unmatched_drugbank: bool = False
 
     # Reporting
     report_output_path: str | None = None
@@ -413,10 +404,7 @@ class Pipeline:
                 ct_cache=ct_cache,
             ),
             "clustering": CandidateClusteringStage(
-                method=cfg.clustering_method,
-                llm_adjudicate=cfg.llm_adjudicate_clusters,
                 drugbank_csv_path=cfg.drugbank_csv_path,
-                drop_unmatched_drugbank=cfg.drop_unmatched_drugbank,
                 drugbank_synonyms_csv_path=cfg.drugbank_synonyms_csv,
             ),
             "classification": AttributeClassificationStage(

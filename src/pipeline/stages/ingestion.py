@@ -130,6 +130,7 @@ SELECT
             FROM   browse_interventions bi
             WHERE  bi.nct_id = s.nct_id
               AND  bi.mesh_term IS NOT NULL
+              AND  bi.mesh_type = 'mesh-list'
         ),
         ARRAY[]::TEXT[]
     ) AS mesh_intervention_terms,
@@ -139,6 +140,7 @@ SELECT
             FROM   browse_conditions bc
             WHERE  bc.nct_id = s.nct_id
               AND  bc.mesh_term IS NOT NULL
+              AND  bc.mesh_type = 'mesh-list'
         ),
         ARRAY[]::TEXT[]
     ) AS mesh_condition_terms,
@@ -148,6 +150,7 @@ SELECT
             FROM   browse_conditions bc
             JOIN   mesh_terms mt ON mt.downcase_mesh_term = bc.downcase_mesh_term
             WHERE  bc.nct_id = s.nct_id
+              AND  bc.mesh_type = 'mesh-list'
               AND  mt.tree_number IS NOT NULL
               AND  (mt.tree_number LIKE 'C%%' OR mt.tree_number LIKE 'F%%')
         ),
@@ -517,6 +520,7 @@ class TrialIngestionStage:
                     SELECT 1 FROM browse_interventions bi
                     WHERE  bi.nct_id = s.nct_id
                       AND  bi.mesh_term = %(mesh_term)s
+                      AND  bi.mesh_type = 'mesh-list'
                 )
                 """
             )

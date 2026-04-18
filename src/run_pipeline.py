@@ -65,8 +65,6 @@ def parse_args() -> argparse.Namespace:
                         help="Keyword filter for trial ingestion")
     parser.add_argument("--mesh", default=None,
                         help="mesh filter for trial ingestion")
-    parser.add_argument("--clustering", choices=["embeddings", "fuzzy", "hybrid"], default="hybrid",
-                        help="Clustering strategy for candidate matching")
     parser.add_argument("--output", default="docs",
                         help="Directory to write report outputs (default: docs/)")
     parser.add_argument("--formats", nargs="+", default=["html"],
@@ -98,12 +96,6 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help="Path to drugbank_approvals.csv for drug normalization and deduplication.",
-    )
-    parser.add_argument(
-        "--keep-unmatched-drugbank",
-        action="store_true",
-        default=False,
-        help="Keep candidates with no DrugBank match (matched candidates are still deduplicated).",
     )
     parser.add_argument(
         "--all-modalities",
@@ -252,10 +244,8 @@ def main() -> None:
     config = PipelineConfig(
         data_source=args.source,
         ingestion_filters=ingestion_filters,
-        clustering_method=args.clustering,
         cache_path=cache_path,
         drugbank_csv_path=drugbank_csv_path,
-        drop_unmatched_drugbank=not args.keep_unmatched_drugbank,
         report_output_path=args.output,
         report_formats=args.formats,
         max_trials=args.max_trials if args.max_trials > 0 else None,

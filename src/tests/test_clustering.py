@@ -1,14 +1,15 @@
 """
 Tests for Stage 2: Candidate Clustering (pipeline/stages/clustering.py)
 
-Test categories:
-  PASS NOW   — constructor, attribute defaults, orchestration wiring (via mocks)
-  FAIL NOW   — behavioral contracts for _cluster, _adjudicate, _build_candidate
-               These tests will PASS once the implementation is complete.
+The clustering stage is a single-pass grouping by (drug_key, indication_key):
+every RawTrial resolves to exactly one drug_key from a priority ladder
+(DrugBank exact → synonym reverse → mesh-list leaf → canonicalized row name)
+and one indication_key (mesh-list leaf → normalized indication text). There
+is no union-find, no alias-set merging, and no transitive closure.
 """
 
 from datetime import date
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -20,57 +21,85 @@ from pipeline.models import (
     TrialTable,
     RawTrial,
 )
-from pipeline.stages.clustering import CandidateClusteringStage, HybridStrategy
+from pipeline.stages.clustering import CandidateClusteringStage
 
 
 # ---------------------------------------------------------------------------
-# Constructor / initialization  (PASS NOW)
+# Helpers
 # ---------------------------------------------------------------------------
+
+
+def _trial(
+    nct_id,
+    intervention,
+    indication="diabetes",
+    phase=TrialPhase.PHASE_1,
+    status=TrialStatus.COMPLETED,
+    mesh_interventions=None,
+    mesh_conditions=None,
+    sponsor="Co",
+    start_date=None,
+    completion_date=None,
+):
+    return RawTrial(
+        nct_id=nct_id,
+        title="T",
+        intervention=intervention,
+        indication=indication,
+        sponsor=sponsor,
+        phase=phase,
+        status=status,
+        start_date=start_date,
+        completion_date=completion_date,
+        mesh_intervention_terms=mesh_interventions or [],
+        mesh_condition_terms=mesh_conditions or [],
+    )
+
+
+def _write_drugbank_csv(tmp_path, rows=None):
+    p = tmp_path / "drugbank_approvals.csv"
+    if rows is None:
+        rows = [
+            "DB00001,lepirudin,lepirudin,peptide",
+            "DB00030,insulin human,insulin human,peptide",
+            "DB00050,insulin,insulin,small molecule",
+        ]
+    p.write_text("drug_id,query_name,query_norm,modality\n" + "\n".join(rows) + "\n")
+    return p
+
+
+def _write_synonyms_csv(tmp_path, rows):
+    p = tmp_path / "drugbank_synonyms.csv"
+    p.write_text("drugbank_id,synonym_norm,kind\n" + "\n".join(rows) + "\n")
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Constructor
+# ---------------------------------------------------------------------------
+
 
 class TestCandidateClusteringStageInit:
-    def test_default_method_is_hybrid(self):
+    def test_default_no_drugbank_path(self):
         stage = CandidateClusteringStage()
-        assert stage.method == "hybrid"
+        assert stage.drugbank_csv_path is None
+        assert stage.drugbank_synonyms_csv_path is None
 
-    def test_default_llm_adjudicate_is_true(self):
-        stage = CandidateClusteringStage()
-        assert stage.llm_adjudicate is True
-
-    def test_custom_method(self):
-        stage = CandidateClusteringStage(method="fuzzy")
-        assert stage.method == "fuzzy"
-
-    def test_custom_llm_adjudicate_false(self):
-        stage = CandidateClusteringStage(llm_adjudicate=False)
-        assert stage.llm_adjudicate is False
-
-    def test_hybrid_method(self):
-        stage = CandidateClusteringStage(method="hybrid")
-        assert stage.method == "hybrid"
-
-    def test_default_drop_unmatched_drugbank_is_true(self):
-        stage = CandidateClusteringStage()
-        assert stage.drop_unmatched_drugbank is True
-
-    def test_custom_drop_unmatched_drugbank_false(self):
-        stage = CandidateClusteringStage(drop_unmatched_drugbank=False)
-        assert stage.drop_unmatched_drugbank is False
+    def test_custom_drugbank_path(self, tmp_path):
+        csv = _write_drugbank_csv(tmp_path)
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        assert stage.drugbank_csv_path == csv
 
 
 # ---------------------------------------------------------------------------
-# run() orchestration with mocks  (PASS NOW)
+# run() orchestration with mocks
 # ---------------------------------------------------------------------------
+
 
 class TestCandidateClusteringStageRunOrchestration:
-    """Mock stubs to verify run() correctly wires _cluster → _adjudicate → candidates."""
-
-    def _make_cluster(self, trial_table):
-        return {"cluster_a": trial_table.trials}
-
-    def test_run_returns_candidate_table_type(self, sample_trial_table, sample_candidate):
-        stage = CandidateClusteringStage(llm_adjudicate=False)
-        clusters = {"c1": [sample_trial_table.trials[0]]}
-        stage._cluster = MagicMock(return_value=clusters)
+    def test_run_returns_candidate_table(self, sample_trial_table, sample_candidate):
+        stage = CandidateClusteringStage()
+        stage._cluster = MagicMock(return_value={"c1": [sample_trial_table.trials[0]]})
         stage._build_candidate = MagicMock(return_value=sample_candidate)
 
         result = stage.run(sample_trial_table)
@@ -78,7 +107,7 @@ class TestCandidateClusteringStageRunOrchestration:
         assert isinstance(result, CandidateTable)
 
     def test_run_calls_cluster_with_trial_table(self, sample_trial_table, sample_candidate):
-        stage = CandidateClusteringStage(llm_adjudicate=False)
+        stage = CandidateClusteringStage()
         stage._cluster = MagicMock(return_value={})
         stage._build_candidate = MagicMock(return_value=sample_candidate)
 
@@ -86,31 +115,12 @@ class TestCandidateClusteringStageRunOrchestration:
 
         stage._cluster.assert_called_once_with(sample_trial_table)
 
-    def test_run_calls_adjudicate_when_flag_is_true(self, sample_trial_table, sample_candidate):
-        stage = CandidateClusteringStage(llm_adjudicate=True)
-        initial_clusters = {"c1": [sample_trial_table.trials[0]]}
-        refined_clusters = {"c1": [sample_trial_table.trials[0]]}
-        stage._cluster = MagicMock(return_value=initial_clusters)
-        stage._adjudicate = MagicMock(return_value=refined_clusters)
-        stage._build_candidate = MagicMock(return_value=sample_candidate)
-
-        stage.run(sample_trial_table)
-
-        stage._adjudicate.assert_called_once_with(initial_clusters)
-
-    def test_run_skips_adjudicate_when_flag_is_false(self, sample_trial_table, sample_candidate):
-        stage = CandidateClusteringStage(llm_adjudicate=False)
-        stage._cluster = MagicMock(return_value={})
-        stage._adjudicate = MagicMock()
-        stage._build_candidate = MagicMock(return_value=sample_candidate)
-
-        stage.run(sample_trial_table)
-
-        stage._adjudicate.assert_not_called()
-
     def test_run_builds_one_candidate_per_cluster(self, sample_trial_table, sample_candidate):
-        stage = CandidateClusteringStage(llm_adjudicate=False)
-        clusters = {"c1": [sample_trial_table.trials[0]], "c2": [sample_trial_table.trials[1]]}
+        stage = CandidateClusteringStage()
+        clusters = {
+            "c1": [sample_trial_table.trials[0]],
+            "c2": [sample_trial_table.trials[1]],
+        }
         stage._cluster = MagicMock(return_value=clusters)
         stage._build_candidate = MagicMock(return_value=sample_candidate)
 
@@ -120,7 +130,7 @@ class TestCandidateClusteringStageRunOrchestration:
         assert len(result) == 2
 
     def test_run_returns_empty_table_for_empty_trial_table(self, empty_trial_table):
-        stage = CandidateClusteringStage(llm_adjudicate=False)
+        stage = CandidateClusteringStage()
         stage._cluster = MagicMock(return_value={})
         stage._build_candidate = MagicMock()
 
@@ -132,643 +142,324 @@ class TestCandidateClusteringStageRunOrchestration:
 
 
 # ---------------------------------------------------------------------------
-# _cluster  (FAIL NOW — stub; PASS when implemented)
+# Single-pass clustering invariants
 # ---------------------------------------------------------------------------
 
-class TestCluster:
-    def test_cluster_returns_dict(self, sample_trial_table):
-        stage = CandidateClusteringStage()
-        result = stage._cluster(sample_trial_table)
-        assert isinstance(result, dict)
 
-    def test_cluster_keys_are_strings(self, sample_trial_table):
+class TestClusterSinglePass:
+    def test_every_trial_lands_in_exactly_one_cluster(self, sample_trial_table):
         stage = CandidateClusteringStage()
-        result = stage._cluster(sample_trial_table)
-        assert all(isinstance(k, str) for k in result)
+        clusters = stage._cluster(sample_trial_table)
+        all_clustered = [t for trials in clusters.values() for t in trials]
+        input_ids = {t.nct_id for t in sample_trial_table.trials}
+        assert {t.nct_id for t in all_clustered} == input_ids
 
-    def test_cluster_values_are_lists(self, sample_trial_table):
-        stage = CandidateClusteringStage()
-        result = stage._cluster(sample_trial_table)
-        assert all(isinstance(v, list) for v in result.values())
+    def test_same_row_drug_same_indication_merges(self):
+        trials = TrialTable(trials=[
+            _trial("NCT001", "DrugA", indication="Diabetes"),
+            _trial("NCT002", "DrugA", indication="Diabetes"),
+        ])
+        clusters = CandidateClusteringStage()._cluster(trials)
+        assert len(clusters) == 1
+        (only_cluster,) = clusters.values()
+        assert {t.nct_id for t in only_cluster} == {"NCT001", "NCT002"}
 
-    def test_cluster_all_trials_appear_in_some_cluster(self, sample_trial_table):
-        """Every input trial should end up in exactly one cluster."""
-        stage = CandidateClusteringStage()
-        result = stage._cluster(sample_trial_table)
-        all_clustered = [t for trials in result.values() for t in trials]
-        input_nct_ids = {t.nct_id for t in sample_trial_table.trials}
-        clustered_nct_ids = {t.nct_id for t in all_clustered}
-        assert input_nct_ids == clustered_nct_ids
+    def test_different_drugs_do_not_merge(self):
+        trials = TrialTable(trials=[
+            _trial("NCT001", "DrugA", indication="Diabetes"),
+            _trial("NCT002", "DrugB", indication="Diabetes"),
+        ])
+        clusters = CandidateClusteringStage()._cluster(trials)
+        assert len(clusters) == 2
 
-    def test_cluster_same_drug_indication_grouped_together(self):
-        """Two trials for the same drug and indication should share a cluster."""
-        trials = [
-            RawTrial(
-                nct_id="NCT001", title="DrugA Phase 1", intervention="DrugA",
-                indication="Diabetes", sponsor="PharmaCo",
-                phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED,
-            ),
-            RawTrial(
-                nct_id="NCT002", title="DrugA Phase 2", intervention="DrugA",
-                indication="Diabetes", sponsor="PharmaCo",
-                phase=TrialPhase.PHASE_2, status=TrialStatus.COMPLETED,
-            ),
-        ]
-        table = TrialTable(trials=trials)
-        stage = CandidateClusteringStage()
-        result = stage._cluster(table)
-        all_nct_ids = [t.nct_id for cluster in result.values() for t in cluster]
-        assert "NCT001" in all_nct_ids and "NCT002" in all_nct_ids
-        cluster_for_drug_a = [
-            cluster for cluster in result.values()
-            if any(t.intervention == "DrugA" for t in cluster)
-        ]
-        # Both trials should be in the same cluster
-        assert len(cluster_for_drug_a) == 1
-        assert len(cluster_for_drug_a[0]) == 2
+    def test_same_drug_different_indications_do_not_merge(self):
+        trials = TrialTable(trials=[
+            _trial("NCT001", "DrugA", indication="Diabetes"),
+            _trial("NCT002", "DrugA", indication="Hypertension"),
+        ])
+        clusters = CandidateClusteringStage()._cluster(trials)
+        assert len(clusters) == 2
 
-    def test_cluster_different_drugs_separate_clusters(self):
-        """Trials for distinct drugs should produce distinct clusters."""
-        trials = [
-            RawTrial(
-                nct_id="NCT001", title="DrugA Phase 1", intervention="DrugA",
-                indication="Diabetes", sponsor="PharmaCo",
-                phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED,
-            ),
-            RawTrial(
-                nct_id="NCT002", title="DrugB Phase 1", intervention="DrugB",
-                indication="Hypertension", sponsor="CardioInc",
-                phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED,
-            ),
-        ]
-        table = TrialTable(trials=trials)
-        stage = CandidateClusteringStage()
-        result = stage._cluster(table)
-        assert len(result) == 2
+    def test_salt_variants_merge_via_canonicalization(self):
+        """'Lepirudin HCl' canonicalizes to 'lepirudin' so it clusters with plain Lepirudin."""
+        trials = TrialTable(trials=[
+            _trial("NCT001", "Lepirudin HCl", indication="diabetes"),
+            _trial("NCT002", "Lepirudin", indication="diabetes"),
+        ])
+        clusters = CandidateClusteringStage()._cluster(trials)
+        assert len(clusters) == 1
 
 
 # ---------------------------------------------------------------------------
-# _adjudicate  (FAIL NOW — stub; PASS when implemented)
+# DrugBank + synonym resolution (drug_key)
 # ---------------------------------------------------------------------------
 
-class TestAdjudicate:
-    def test_adjudicate_returns_dict(self, sample_trial_table):
-        stage = CandidateClusteringStage()
-        result = stage._adjudicate({"c1": sample_trial_table.trials})
-        assert isinstance(result, dict)
 
-    def test_adjudicate_preserves_all_trials(self, sample_trial_table):
-        """Adjudication should not drop any trials."""
-        input_clusters = {"c1": sample_trial_table.trials}
-        stage = CandidateClusteringStage()
-        result = stage._adjudicate(input_clusters)
-        all_trials = [t for trials in result.values() for t in trials]
-        assert len(all_trials) >= len(sample_trial_table.trials)
+class TestClusterDrugBankResolution:
+    def test_drugbank_match_yields_db_prefixed_candidate_id(self, tmp_path):
+        csv = _write_drugbank_csv(tmp_path)
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        trials = TrialTable(trials=[_trial("NCT001", "Lepirudin")])
 
+        result = stage.run(trials)
 
-# ---------------------------------------------------------------------------
-# _build_candidate  (FAIL NOW — stub; PASS when implemented)
-# ---------------------------------------------------------------------------
+        assert len(result) == 1
+        only = result.candidates[0]
+        assert only.drugbank_id == "DB00001"
+        assert only.candidate_id.startswith("db:DB00001")
 
-class TestBuildCandidate:
-    def test_build_candidate_returns_candidate(self, sample_trial_table):
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_001", sample_trial_table.trials)
-        assert isinstance(result, Candidate)
-
-    def test_build_candidate_uses_provided_id(self, sample_trial_table):
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("my_cluster_id", sample_trial_table.trials)
-        assert result.candidate_id == "my_cluster_id"
-
-    def test_build_candidate_aggregates_trial_ids(self, sample_trial_table):
-        """All trial nct_ids from the cluster should appear in the Candidate."""
-        stage = CandidateClusteringStage()
-        trials = sample_trial_table.trials
-        result = stage._build_candidate("cand_x", trials)
-        expected_nct_ids = {t.nct_id for t in trials}
-        assert expected_nct_ids.issubset(set(result.trial_ids))
-
-    def test_build_candidate_sets_highest_phase(self):
-        """highest_phase should reflect the most advanced phase in the cluster."""
-        trials = [
-            RawTrial(
-                nct_id="NCT001", title="DrugA Ph1", intervention="DrugA",
-                indication="Diabetes", sponsor="X",
-                phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED,
-            ),
-            RawTrial(
-                nct_id="NCT002", title="DrugA Ph2", intervention="DrugA",
-                indication="Diabetes", sponsor="X",
-                phase=TrialPhase.PHASE_2, status=TrialStatus.COMPLETED,
-            ),
-        ]
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", trials)
-        assert result.highest_phase == TrialPhase.PHASE_2
-
-    def test_build_candidate_extracts_drug_name(self, sample_trial_table):
-        stage = CandidateClusteringStage()
-        trials = [sample_trial_table.trials[0]]  # DrugA / Diabetes trial
-        result = stage._build_candidate("cand_x", trials)
-        assert result.drug_name != ""
-
-    def test_build_candidate_collects_unique_sponsors(self):
-        trials = [
-            RawTrial(
-                nct_id="NCT001", title="DrugA Ph1", intervention="DrugA",
-                indication="Diabetes", sponsor="PharmaCo",
-                phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED,
-            ),
-            RawTrial(
-                nct_id="NCT002", title="DrugA Ph2", intervention="DrugA",
-                indication="Diabetes", sponsor="BioInc",
-                phase=TrialPhase.PHASE_2, status=TrialStatus.COMPLETED,
-            ),
-        ]
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", trials)
-        assert "PharmaCo" in result.sponsors
-        assert "BioInc" in result.sponsors
-
-
-# ---------------------------------------------------------------------------
-# _build_candidate — date propagation  (PASS NOW)
-# ---------------------------------------------------------------------------
-
-class TestBuildCandidateDates:
-    def _make_trial(self, nct_id, start_date, completion_date, phase=TrialPhase.PHASE_1):
-        return RawTrial(
-            nct_id=nct_id, title="Title", intervention="DrugX",
-            indication="Diabetes", sponsor="Co",
-            phase=phase, status=TrialStatus.COMPLETED,
-            start_date=start_date, completion_date=completion_date,
+    def test_codename_and_inn_merge_via_synonyms(self, tmp_path):
+        db_csv = _write_drugbank_csv(
+            tmp_path,
+            rows=["DB00002,vopratelimab,vopratelimab,monoclonal antibody"],
         )
-
-    def test_build_candidate_sets_earliest_start_date(self):
-        trials = [
-            self._make_trial("NCT001", date(2018, 1, 1), date(2020, 6, 1)),
-            self._make_trial("NCT002", date(2019, 3, 1), date(2021, 12, 1)),
-        ]
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", trials)
-        assert result.earliest_start_date == date(2018, 1, 1)
-
-    def test_build_candidate_sets_latest_completion_date(self):
-        trials = [
-            self._make_trial("NCT001", date(2018, 1, 1), date(2020, 6, 1)),
-            self._make_trial("NCT002", date(2019, 3, 1), date(2021, 12, 1)),
-        ]
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", trials)
-        assert result.latest_completion_date == date(2021, 12, 1)
-
-    def test_build_candidate_earliest_start_date_is_none_when_all_trials_lack_start(self):
-        trials = [
-            self._make_trial("NCT001", None, date(2020, 6, 1)),
-            self._make_trial("NCT002", None, date(2021, 12, 1)),
-        ]
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", trials)
-        assert result.earliest_start_date is None
-
-    def test_build_candidate_latest_completion_date_is_none_when_all_trials_lack_completion(self):
-        trials = [
-            self._make_trial("NCT001", date(2018, 1, 1), None),
-            self._make_trial("NCT002", date(2019, 3, 1), None),
-        ]
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", trials)
-        assert result.latest_completion_date is None
-
-    def test_build_candidate_skips_none_start_dates_when_computing_min(self):
-        trials = [
-            self._make_trial("NCT001", None, date(2020, 6, 1)),
-            self._make_trial("NCT002", date(2019, 3, 1), date(2021, 12, 1)),
-            self._make_trial("NCT003", date(2017, 6, 1), date(2022, 1, 1)),
-        ]
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", trials)
-        assert result.earliest_start_date == date(2017, 6, 1)
-
-
-# ---------------------------------------------------------------------------
-# TestBuildCandidateRawName  (PASS NOW)
-# ---------------------------------------------------------------------------
-
-class TestBuildCandidateRawName:
-    def _make_trial(self, nct_id, intervention):
-        return RawTrial(
-            nct_id=nct_id, title="Title", intervention=intervention,
-            indication="Diabetes", sponsor="Co",
-            phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED,
+        syn_csv = _write_synonyms_csv(
+            tmp_path,
+            rows=[
+                "DB00002,vopratelimab,primary_name",
+                "DB00002,bms 986156,synonym",
+            ],
         )
-
-    def test_drug_name_raw_preserved_from_trial(self):
-        """drug_name_raw must equal the original intervention string (not salt-stripped)."""
-        trial = self._make_trial("NCT001", "Lepirudin HCl")
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", [trial])
-        assert result.drug_name_raw == "Lepirudin HCl"
-
-    def test_drug_name_still_normalized(self):
-        """drug_name must be the salt-stripped lowercase form."""
-        trial = self._make_trial("NCT001", "Lepirudin HCl")
-        stage = CandidateClusteringStage()
-        result = stage._build_candidate("cand_x", [trial])
-        assert result.drug_name == "lepirudin"
-        assert result.drug_name != result.drug_name_raw
-
-
-# ---------------------------------------------------------------------------
-# TestHybridStrategy  (PASS NOW)
-# ---------------------------------------------------------------------------
-
-class TestHybridStrategy:
-    def _make_trial(self, nct_id, intervention, indication,
-                    mesh_conditions=None, mesh_interventions=None):
-        return RawTrial(
-            nct_id=nct_id, title="T", intervention=intervention,
-            indication=indication, sponsor="Co",
-            phase=TrialPhase.PHASE_1, status=TrialStatus.COMPLETED,
-            mesh_condition_terms=mesh_conditions or [],
-            mesh_intervention_terms=mesh_interventions or [],
-        )
-
-    def test_same_mesh_condition_term_clusters_together(self):
-        """Two trials with same drug + same MeSH condition term cluster together
-        even when free-text indication strings differ."""
-        trials = [
-            self._make_trial("NCT001", "DrugA", "Type 2 Diabetes",
-                             mesh_conditions=["Diabetes Mellitus, Type 2"]),
-            self._make_trial("NCT002", "DrugA", "T2DM",
-                             mesh_conditions=["Diabetes Mellitus, Type 2"]),
-        ]
-        result = HybridStrategy().cluster(TrialTable(trials=trials))
-        assert len(result) == 1
-
-    def test_same_mesh_intervention_term_clusters_together(self):
-        """Two trials sharing the same MeSH intervention term cluster together
-        even when free-text drug names differ (e.g. brand vs generic)."""
-        trials = [
-            self._make_trial("NCT001", "Insulin Glargine", "Diabetes",
-                             mesh_interventions=["Insulin Glargine"]),
-            self._make_trial("NCT002", "Lantus", "Diabetes",
-                             mesh_interventions=["Insulin Glargine"]),
-        ]
-        result = HybridStrategy().cluster(TrialTable(trials=trials))
-        assert len(result) == 1
-
-    def test_fallback_to_normalized_drug_and_indication_when_no_mesh(self):
-        """Trials without any MeSH terms cluster by normalized free-text strings."""
-        trials = [
-            self._make_trial("NCT001", "DrugA", "Diabetes",
-                             mesh_conditions=[], mesh_interventions=[]),
-            self._make_trial("NCT002", "DrugA", "Diabetes",
-                             mesh_conditions=[], mesh_interventions=[]),
-        ]
-        result = HybridStrategy().cluster(TrialTable(trials=trials))
-        assert len(result) == 1
-
-    def test_different_mesh_condition_terms_produce_separate_clusters(self):
-        """Same drug tagged with different MeSH condition terms → separate clusters."""
-        trials = [
-            self._make_trial("NCT001", "DrugA", "Cancer",
-                             mesh_conditions=["Breast Neoplasms"]),
-            self._make_trial("NCT002", "DrugA", "Cancer",
-                             mesh_conditions=["Lung Neoplasms"]),
-        ]
-        result = HybridStrategy().cluster(TrialTable(trials=trials))
-        assert len(result) == 2
-
-    def test_different_mesh_intervention_terms_produce_separate_clusters(self):
-        """Trials with different MeSH intervention terms → separate clusters."""
-        trials = [
-            self._make_trial("NCT001", "DrugA", "Diabetes",
-                             mesh_interventions=["Insulin"]),
-            self._make_trial("NCT002", "DrugB", "Diabetes",
-                             mesh_interventions=["Metformin"]),
-        ]
-        result = HybridStrategy().cluster(TrialTable(trials=trials))
-        assert len(result) == 2
-
-    def test_mesh_condition_key_is_deterministic_for_multiple_terms(self):
-        """Multiple MeSH condition terms produce a sorted, stable indication key."""
-        trials = [
-            self._make_trial("NCT001", "DrugA", "Cancer",
-                             mesh_conditions=["Neoplasms", "Breast Neoplasms"]),
-            self._make_trial("NCT002", "DrugA", "Cancer",
-                             mesh_conditions=["Breast Neoplasms", "Neoplasms"]),
-        ]
-        result = HybridStrategy().cluster(TrialTable(trials=trials))
-        assert len(result) == 1
-
-    def test_mesh_intervention_key_is_deterministic_for_multiple_terms(self):
-        """Multiple MeSH intervention terms produce a sorted, stable drug key."""
-        trials = [
-            self._make_trial("NCT001", "DrugA", "Diabetes",
-                             mesh_interventions=["Insulin", "Insulin Glargine"]),
-            self._make_trial("NCT002", "DrugA", "Diabetes",
-                             mesh_interventions=["Insulin Glargine", "Insulin"]),
-        ]
-        result = HybridStrategy().cluster(TrialTable(trials=trials))
-        assert len(result) == 1
-
-
-# ---------------------------------------------------------------------------
-# TestApplyDrugbankDedup  (PASS NOW)
-# ---------------------------------------------------------------------------
-
-class TestApplyDrugbankDedup:
-    def _make_trial(self, nct_id, intervention, indication="Diabetes", phase=TrialPhase.PHASE_1):
-        return RawTrial(
-            nct_id=nct_id, title="Title", intervention=intervention,
-            indication=indication, sponsor="Co",
-            phase=phase, status=TrialStatus.COMPLETED,
-        )
-
-    def _make_candidate(self, cid, drug_name_raw, indication="diabetes", phase=TrialPhase.PHASE_1,
-                        trial_ids=None, mesh_drug=None):
-        return Candidate(
-            candidate_id=cid,
-            drug_name=drug_name_raw.lower(),
-            indication=indication,
-            drug_name_raw=drug_name_raw,
-            trial_ids=trial_ids or [cid],
-            highest_phase=phase,
-            sponsors=["Co"],
-            mesh_drug=mesh_drug,
-        )
-
-    def _write_csv(self, tmp_path, content):
-        p = tmp_path / "drugbank_approvals.csv"
-        p.write_text(content)
-        return p
-
-    def test_assigns_drugbank_id_to_matched_candidate(self, tmp_path, drugbank_csv_content):
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        candidates = [self._make_candidate("c1", "lepirudin")]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 1
-        assert result[0].drugbank_id == "DB00001"
-
-    def test_assigns_none_to_unmatched_candidate(self, tmp_path, drugbank_csv_content):
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        candidates = [self._make_candidate("c1", "unknowndrug xyz")]
-        # unmatched candidates are filtered out
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 0
-
-    def test_filters_out_unmatched_candidates(self, tmp_path, drugbank_csv_content):
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        candidates = [
-            self._make_candidate("c1", "lepirudin"),
-            self._make_candidate("c2", "unknowndrug xyz"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 1
-        assert result[0].candidate_id == "c1"
-
-    def test_keeps_unmatched_candidates_when_configured(self, tmp_path, drugbank_csv_content):
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(
-            drugbank_csv_path=csv_path,
-            drop_unmatched_drugbank=False,
-        )
-        candidates = [
-            self._make_candidate("c1", "lepirudin"),
-            self._make_candidate("c2", "unknowndrug xyz"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 2
-        by_id = {c.candidate_id: c for c in result}
-        assert by_id["c1"].drugbank_id == "DB00001"
-        assert by_id["c2"].drugbank_id is None
-
-    def test_merges_candidates_sharing_drugbank_id_and_indication(self, tmp_path, drugbank_csv_content):
-        """Brand + generic for same drug_id + indication → one merged candidate."""
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        # Both normalize to DB00001; "lepirudin hcl" first-word → DB00001
-        candidates = [
-            self._make_candidate("c1", "lepirudin", trial_ids=["NCT001"], phase=TrialPhase.PHASE_1),
-            self._make_candidate("c2", "lepirudin hcl", trial_ids=["NCT002"], phase=TrialPhase.PHASE_2),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 1
-        merged = result[0]
-        assert set(merged.trial_ids) == {"NCT001", "NCT002"}
-        assert merged.highest_phase == TrialPhase.PHASE_2
-
-    def test_does_not_merge_candidates_with_same_drugbank_id_but_different_indication(self, tmp_path, drugbank_csv_content):
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        candidates = [
-            self._make_candidate("c1", "lepirudin", indication="diabetes"),
-            self._make_candidate("c2", "lepirudin", indication="hypertension"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 2
-
-    def test_skipped_when_csv_path_is_none(self):
-        """Without a CSV path, _apply_drugbank_dedup is a no-op."""
-        stage = CandidateClusteringStage(drugbank_csv_path=None)
-        candidates = [
-            self._make_candidate("c1", "unknowndrug"),
-            self._make_candidate("c2", "anotherdrug"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        # All candidates pass through unchanged
-        assert len(result) == 2
-        assert all(c.drugbank_id is None for c in result)
-
-    def test_merges_candidates_sharing_mesh_drug_and_indication(self, tmp_path, drugbank_csv_content):
-        """Candidates matched by drug MeSH (not DrugBank) sharing same indication merge."""
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path, drop_unmatched_drugbank=False)
-        # Use a drug name that won't match DrugBank but supply mesh_drug
-        candidates = [
-            self._make_candidate("c1", "unknowndrug", indication="diabetes",
-                                 trial_ids=["NCT001"], mesh_drug="insulin"),
-            self._make_candidate("c2", "unknowndrug variant", indication="diabetes",
-                                 trial_ids=["NCT002"], mesh_drug="insulin"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        # Both share mesh_drug="insulin" + same indication → merged into one
-        by_trials = {frozenset(c.trial_ids) for c in result}
-        assert frozenset({"NCT001", "NCT002"}) in by_trials
-
-    def test_union_includes_candidates_with_only_mesh_drug(self, tmp_path, drugbank_csv_content):
-        """Candidates with mesh_drug but no DrugBank ID are included in eligible pool."""
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path, drop_unmatched_drugbank=False)
-        candidates = [
-            self._make_candidate("c1", "unknowndrug", mesh_drug="some mesh term"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        # Candidate with only mesh_drug is retained (not dropped as unmatched)
-        assert len(result) == 1
-
-    def test_transitive_closure_across_drugbank_and_mesh_aliases(self, tmp_path, drugbank_csv_content):
-        """A↔B share DrugBank ID, B↔C share MeSH drug — all three merge."""
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        # Candidate A: matches DB00050 via name="insulin", mesh_drug="insulin"
-        # Candidate B: matches DB00050 via name="insulin", but mesh_drug differs
-        # Candidate C: does NOT match DrugBank (unknown name), but mesh_drug="insulin glargine"
-        # Under the old one-shot rule, A+B merge via DrugBank; C stays alone
-        # because its canonical drug key is "insulin glargine" (MeSH) while
-        # A's and B's are "DB00050". Under union-find, B↔C link via the MeSH
-        # alias "insulin glargine" (B's mesh_drug), so all three merge.
-        candidates = [
-            self._make_candidate("cA", "insulin", indication="diabetes",
-                                 trial_ids=["NCT001"], mesh_drug="insulin"),
-            self._make_candidate("cB", "insulin", indication="diabetes",
-                                 trial_ids=["NCT002"], mesh_drug="insulin glargine"),
-            self._make_candidate("cC", "unknowndrug xyz", indication="diabetes",
-                                 trial_ids=["NCT003"], mesh_drug="insulin glargine"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 1
-        merged = result[0]
-        assert set(merged.trial_ids) == {"NCT001", "NCT002", "NCT003"}
-
-    def test_namespace_tagging_prevents_cross_alias_false_merge(self, tmp_path, drugbank_csv_content):
-        """A DrugBank ID string equal to a MeSH term must not link across candidates."""
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path, drop_unmatched_drugbank=False)
-        # Candidate A gets DrugBank ID "DB00001" via the lepirudin match.
-        # Candidate B has no DrugBank match but carries mesh_drug="DB00001"
-        # (contrived string collision). Tagged aliases ("db", "DB00001") vs
-        # ("mesh", "DB00001") must not union them.
-        candidates = [
-            self._make_candidate("cA", "lepirudin", indication="diabetes",
-                                 trial_ids=["NCT001"]),
-            self._make_candidate("cB", "unknowndrug xyz", indication="diabetes",
-                                 trial_ids=["NCT002"], mesh_drug="DB00001"),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 2
-        trial_sets = {frozenset(c.trial_ids) for c in result}
-        assert trial_sets == {frozenset({"NCT001"}), frozenset({"NCT002"})}
-
-    def test_union_find_respects_indication_mismatch(self, tmp_path, drugbank_csv_content):
-        """Same DrugBank ID but different indications → no merge."""
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        candidates = [
-            self._make_candidate("c1", "lepirudin", indication="diabetes",
-                                 trial_ids=["NCT001"]),
-            self._make_candidate("c2", "lepirudin", indication="hypertension",
-                                 trial_ids=["NCT002"]),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 2
-
-    def test_union_find_merges_via_normalized_name_alias(self, tmp_path, drugbank_csv_content):
-        """Two candidates sharing only a normalized drug name + indication merge."""
-        csv_path = self._write_csv(tmp_path, drugbank_csv_content)
-        stage = CandidateClusteringStage(drugbank_csv_path=csv_path)
-        # Both are "lepirudin" so both get DB00001 → eligible via DrugBank.
-        # They also both have drug_name="lepirudin" (normalized). Even if we
-        # removed DrugBank, the name alias should still link them. This test
-        # documents that the name tier of the alias ladder works.
-        candidates = [
-            self._make_candidate("c1", "lepirudin", indication="diabetes",
-                                 trial_ids=["NCT001"]),
-            self._make_candidate("c2", "lepirudin", indication="diabetes",
-                                 trial_ids=["NCT002"]),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        assert len(result) == 1
-        assert set(result[0].trial_ids) == {"NCT001", "NCT002"}
-
-
-# ---------------------------------------------------------------------------
-# Synonym alias tier (Fix #3) — codename↔INN recovery via DrugBank synonyms
-# ---------------------------------------------------------------------------
-
-
-class TestSynonymAliasTier:
-    def _make_trial(self, nct_id, intervention, indication="diabetes", phase=TrialPhase.PHASE_1):
-        return RawTrial(
-            nct_id=nct_id, title="Title", intervention=intervention,
-            indication=indication, sponsor="Co",
-            phase=phase, status=TrialStatus.COMPLETED,
-        )
-
-    def _make_candidate(self, cid, drug_name_raw, indication="diabetes",
-                        phase=TrialPhase.PHASE_1, trial_ids=None, mesh_drug=None):
-        return Candidate(
-            candidate_id=cid,
-            drug_name=drug_name_raw.lower(),
-            indication=indication,
-            drug_name_raw=drug_name_raw,
-            trial_ids=trial_ids or [cid],
-            highest_phase=phase,
-            sponsors=["Co"],
-            mesh_drug=mesh_drug,
-        )
-
-    def _write_drugbank_csv(self, tmp_path):
-        p = tmp_path / "drugbank_approvals.csv"
-        p.write_text(
-            "drug_id,query_name,query_norm,modality\n"
-            "DB00002,vopratelimab,vopratelimab,monoclonal antibody\n"
-        )
-        return p
-
-    def _write_synonyms_csv(self, tmp_path):
-        p = tmp_path / "drugbank_synonyms.csv"
-        p.write_text(
-            "drugbank_id,synonym_norm,kind\n"
-            "DB00002,vopratelimab,primary_name\n"
-            "DB00002,bms 986156,synonym\n"
-        )
-        return p
-
-    def test_codename_and_inn_candidates_merge_via_synonym(self, tmp_path):
-        """A candidate named by company codename (BMS-986156) and a candidate
-        named by the INN (Vopratelimab) for the same indication should merge
-        once the DrugBank synonym map is provided."""
-        db_csv = self._write_drugbank_csv(tmp_path)
-        syn_csv = self._write_synonyms_csv(tmp_path)
         stage = CandidateClusteringStage(
             drugbank_csv_path=db_csv,
             drugbank_synonyms_csv_path=syn_csv,
         )
-        candidates = [
-            self._make_candidate("c1", "BMS-986156", indication="oncology",
-                                 phase=TrialPhase.PHASE_1, trial_ids=["NCT001"]),
-            self._make_candidate("c2", "Vopratelimab", indication="oncology",
-                                 phase=TrialPhase.PHASE_2, trial_ids=["NCT002"]),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
+        trials = TrialTable(trials=[
+            _trial("NCT001", "BMS-986156", indication="oncology", phase=TrialPhase.PHASE_1),
+            _trial("NCT002", "Vopratelimab", indication="oncology", phase=TrialPhase.PHASE_2),
+        ])
+
+        result = stage.run(trials)
+
         assert len(result) == 1
-        merged = result[0]
+        merged = result.candidates[0]
         assert merged.drugbank_id == "DB00002"
         assert set(merged.trial_ids) == {"NCT001", "NCT002"}
-        # Highest phase across merged candidates wins.
         assert merged.highest_phase == TrialPhase.PHASE_2
 
-    def test_without_synonym_csv_codename_and_inn_do_not_merge(self, tmp_path):
-        """Regression: without the synonyms CSV, the legacy behavior is
-        preserved — codename-only rows stay separate from INN rows."""
-        db_csv = self._write_drugbank_csv(tmp_path)
-        stage = CandidateClusteringStage(
-            drugbank_csv_path=db_csv,
-            drugbank_synonyms_csv_path=None,
-            drop_unmatched_drugbank=False,  # keep the codename candidate alive
-        )
-        candidates = [
-            self._make_candidate("c1", "BMS-986156", indication="oncology",
-                                 phase=TrialPhase.PHASE_1, trial_ids=["NCT001"]),
-            self._make_candidate("c2", "Vopratelimab", indication="oncology",
-                                 phase=TrialPhase.PHASE_2, trial_ids=["NCT002"]),
-        ]
-        result = stage._apply_drugbank_dedup(candidates)
-        # No synonym map → codename candidate is orphaned from the INN.
+    def test_no_first_word_overreach(self, tmp_path):
+        """A DrugBank-free row whose first token matches a DrugBank entry must not merge."""
+        csv = _write_drugbank_csv(tmp_path)  # has 'insulin' = DB00050
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        trials = TrialTable(trials=[
+            _trial("NCT001", "insulin", indication="diabetes"),
+            _trial("NCT002", "insulin lispro", indication="diabetes"),
+        ])
+
+        result = stage.run(trials)
+
+        # "insulin" matches DB00050; "insulin lispro" has no exact match and
+        # the first-word fallback is gone, so they stay separate.
         assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# MeSH-leaf fallback (drug_key step 3)
+# ---------------------------------------------------------------------------
+
+
+class TestMeshLeafFallback:
+    def test_mesh_leaf_chosen_when_no_drugbank_match(self, tmp_path):
+        csv = _write_drugbank_csv(tmp_path)
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        trials = TrialTable(trials=[
+            _trial("NCT001", "NovelPeptide-001", indication="diabetes",
+                   mesh_interventions=["NovelPeptide-001"]),
+            _trial("NCT002", "NovelPeptide-001", indication="diabetes",
+                   mesh_interventions=["NovelPeptide-001"]),
+        ])
+
+        result = stage.run(trials)
+
+        assert len(result) == 1
+
+    def test_combo_therapy_row_picks_its_own_drug_leaf(self, tmp_path):
+        """A Paclitaxel row in a study with both 'Paclitaxel' and 'Carboplatin'
+        listed at study level picks Paclitaxel (the one matching the row's
+        drug name), not the first-listed leaf. The carboplatin row does the
+        symmetric thing — neither contaminates the other."""
+        csv = _write_drugbank_csv(
+            tmp_path,
+            rows=[
+                "DB00072,paclitaxel,paclitaxel,small molecule",
+                "DB00073,carboplatin,carboplatin,small molecule",
+            ],
+        )
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        # Combo study NCT001 has both drugs as separate rows, each with the
+        # study-level mesh-list list ["Paclitaxel", "Carboplatin"]. Row-level
+        # `intervention` is the distinguishing field.
+        combo_mesh = ["Paclitaxel", "Carboplatin"]
+        trials = TrialTable(trials=[
+            _trial("NCT001-A", "Paclitaxel", indication="ovarian cancer",
+                   mesh_interventions=combo_mesh),
+            _trial("NCT001-B", "Carboplatin", indication="ovarian cancer",
+                   mesh_interventions=combo_mesh),
+            _trial("NCT002",   "Paclitaxel", indication="ovarian cancer",
+                   mesh_interventions=["Paclitaxel"]),
+        ])
+
+        result = stage.run(trials)
+
+        # Two clusters: paclitaxel (2 trials) and carboplatin (1 trial).
+        by_id = {c.drugbank_id: c for c in result.candidates}
+        assert set(by_id.keys()) == {"DB00072", "DB00073"}
+        assert set(by_id["DB00072"].trial_ids) == {"NCT001-A", "NCT002"}
+        assert by_id["DB00073"].trial_ids == ["NCT001-B"]
+
+    def test_ancestor_string_never_merges_unrelated_drugs(self, tmp_path):
+        """Even if an ancestor-style term ('Organic Chemicals') ends up in the
+        row's mesh_intervention_terms (it shouldn't post-SQL-filter; this is
+        a regression guard), it must not cause two unrelated drugs to merge."""
+        csv = _write_drugbank_csv(
+            tmp_path,
+            rows=[
+                "DB00072,paclitaxel,paclitaxel,small molecule",
+                "DB00100,atorvastatin,atorvastatin,small molecule",
+            ],
+        )
+        stage = CandidateClusteringStage(drugbank_csv_path=csv)
+        # Both rows carry an unrelated ancestor term as a MeSH leaf (simulating
+        # a stale cache or a misconfigured SQL filter). With row-drug matching,
+        # the ancestor is ignored because it does not match either row's drug.
+        trials = TrialTable(trials=[
+            _trial("NCT001", "Paclitaxel", indication="breast cancer",
+                   mesh_interventions=["Paclitaxel", "Organic Chemicals"]),
+            _trial("NCT002", "Atorvastatin", indication="hyperlipidemia",
+                   mesh_interventions=["Atorvastatin", "Organic Chemicals"]),
+        ])
+
+        result = stage.run(trials)
+
+        # Different drugs AND different indications — two clusters.
+        assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# indication_key resolution
+# ---------------------------------------------------------------------------
+
+
+class TestIndicationKey:
+    def test_mesh_leaf_preferred_over_free_text(self):
+        trials = TrialTable(trials=[
+            _trial("NCT001", "DrugA", indication="Type 2 Diabetes",
+                   mesh_conditions=["Diabetes Mellitus, Type 2"]),
+            _trial("NCT002", "DrugA", indication="T2DM",
+                   mesh_conditions=["Diabetes Mellitus, Type 2"]),
+        ])
+
+        clusters = CandidateClusteringStage()._cluster(trials)
+
+        assert len(clusters) == 1
+
+    def test_different_mesh_condition_leaves_produce_separate_clusters(self):
+        trials = TrialTable(trials=[
+            _trial("NCT001", "DrugA", mesh_conditions=["Breast Neoplasms"]),
+            _trial("NCT002", "DrugA", mesh_conditions=["Lung Neoplasms"]),
+        ])
+
+        clusters = CandidateClusteringStage()._cluster(trials)
+
+        assert len(clusters) == 2
+
+    def test_free_text_fallback_when_no_mesh_leaf(self):
+        trials = TrialTable(trials=[
+            _trial("NCT001", "DrugA", indication="Diabetes",
+                   mesh_conditions=[]),
+            _trial("NCT002", "DrugA", indication="Diabetes",
+                   mesh_conditions=[]),
+        ])
+
+        clusters = CandidateClusteringStage()._cluster(trials)
+
+        assert len(clusters) == 1
+
+
+# ---------------------------------------------------------------------------
+# _build_candidate
+# ---------------------------------------------------------------------------
+
+
+class TestBuildCandidate:
+    def test_returns_candidate_instance(self, sample_trial_table):
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("my_id", sample_trial_table.trials)
+        assert isinstance(result, Candidate)
+        assert result.candidate_id == "my_id"
+
+    def test_aggregates_trial_ids(self, sample_trial_table):
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", sample_trial_table.trials)
+        assert set(result.trial_ids) == {t.nct_id for t in sample_trial_table.trials}
+
+    def test_highest_phase_is_most_advanced_in_cluster(self):
+        trials = [
+            _trial("NCT001", "DrugA", phase=TrialPhase.PHASE_1),
+            _trial("NCT002", "DrugA", phase=TrialPhase.PHASE_2),
+        ]
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", trials)
+        assert result.highest_phase == TrialPhase.PHASE_2
+
+    def test_drug_name_raw_preserved_from_first_trial(self):
+        trial = _trial("NCT001", "Lepirudin HCl")
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", [trial])
+        assert result.drug_name_raw == "Lepirudin HCl"
+
+    def test_drug_name_normalized(self):
+        trial = _trial("NCT001", "Lepirudin HCl")
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", [trial])
+        assert result.drug_name == "lepirudin"
+
+    def test_collects_unique_sponsors(self):
+        trials = [
+            _trial("NCT001", "DrugA", sponsor="PharmaCo"),
+            _trial("NCT002", "DrugA", sponsor="BioInc"),
+            _trial("NCT003", "DrugA", sponsor="PharmaCo"),
+        ]
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", trials)
+        assert result.sponsors == ["PharmaCo", "BioInc"]
+
+    def test_earliest_and_latest_dates(self):
+        trials = [
+            _trial("NCT001", "DrugA", start_date=date(2018, 1, 1),
+                   completion_date=date(2020, 6, 1)),
+            _trial("NCT002", "DrugA", start_date=date(2019, 3, 1),
+                   completion_date=date(2021, 12, 1)),
+        ]
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", trials)
+        assert result.earliest_start_date == date(2018, 1, 1)
+        assert result.latest_completion_date == date(2021, 12, 1)
+
+    def test_dates_none_when_unavailable(self):
+        trials = [
+            _trial("NCT001", "DrugA", start_date=None, completion_date=None),
+        ]
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", trials)
+        assert result.earliest_start_date is None
+        assert result.latest_completion_date is None
+
+    def test_mesh_drug_picks_most_common_leaf(self):
+        trials = [
+            _trial("NCT001", "DrugA", mesh_interventions=["Insulin"]),
+            _trial("NCT002", "DrugA", mesh_interventions=["Insulin"]),
+            _trial("NCT003", "DrugA", mesh_interventions=["Insulin Glargine"]),
+        ]
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", trials)
+        assert result.mesh_drug == "insulin"
+
+    def test_drugbank_id_extracted_from_tuple_candidate_id(self):
+        """When _build_candidate is called via run(), the cluster id is a
+        (drug_key, indication_key) tuple; _build_candidate parses the DrugBank
+        ID from that tuple so the Candidate record exposes it."""
+        trials = [_trial("NCT001", "Lepirudin")]
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate((("db", "DB00001"), "diabetes"), trials)
+        assert result.drugbank_id == "DB00001"

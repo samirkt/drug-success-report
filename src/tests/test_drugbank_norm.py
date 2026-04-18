@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pipeline.drugbank_norm import canonicalize_drug_name, load_drugbank_lookup, match_drug_name
+from pipeline.drugbank_norm import canonicalize_drug_name, load_drugbank_lookup
 
 
 # ---------------------------------------------------------------------------
@@ -89,42 +89,3 @@ class TestLoadDrugbankLookup:
         assert lepirudin_row.iloc[0]["modality"] == "peptide"
 
 
-# ---------------------------------------------------------------------------
-# TestMatchDrugName
-# ---------------------------------------------------------------------------
-
-class TestMatchDrugName:
-    @pytest.fixture
-    def lookup_tables(self, tmp_path, drugbank_csv_content):
-        p = tmp_path / "drugbank_approvals.csv"
-        p.write_text(drugbank_csv_content)
-        return load_drugbank_lookup(p)
-
-    def test_exact_normalized_match(self, lookup_tables):
-        best_rows, best_rows_norm = lookup_tables
-        result = match_drug_name("lepirudin", best_rows, best_rows_norm)
-        assert result == "DB00001"
-
-    def test_first_word_fallback(self, lookup_tables):
-        """'lepirudin hcl' has no exact match but first word 'lepirudin' does."""
-        best_rows, best_rows_norm = lookup_tables
-        result = match_drug_name("lepirudin hcl", best_rows, best_rows_norm)
-        assert result == "DB00001"
-
-    def test_parenthetical_stripped_before_match(self, lookup_tables):
-        """'Lepirudin (rDNA origin) HCl' should match DB00001 after canonicalization."""
-        best_rows, best_rows_norm = lookup_tables
-        result = match_drug_name("Lepirudin (rDNA origin) HCl", best_rows, best_rows_norm)
-        assert result == "DB00001"
-
-    def test_no_match_returns_none(self, lookup_tables):
-        best_rows, best_rows_norm = lookup_tables
-        result = match_drug_name("unknowndrug xyz", best_rows, best_rows_norm)
-        assert result is None
-
-    def test_exact_match_preferred_over_first_word(self, lookup_tables):
-        """'insulin human' matches exactly (DB00030); first word 'insulin' → DB00050.
-        Exact match must win."""
-        best_rows, best_rows_norm = lookup_tables
-        result = match_drug_name("insulin human", best_rows, best_rows_norm)
-        assert result == "DB00030"

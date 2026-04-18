@@ -49,14 +49,6 @@ class TestPipelineConfig:
         config = PipelineConfig()
         assert config.ingestion_filters == {}
 
-    def test_default_clustering_method(self):
-        config = PipelineConfig()
-        assert config.clustering_method == "hybrid"
-
-    def test_default_llm_adjudicate_clusters(self):
-        config = PipelineConfig()
-        assert config.llm_adjudicate_clusters is True
-
     def test_default_use_literature_lookup(self):
         config = PipelineConfig()
         assert config.use_literature_lookup is True
@@ -69,29 +61,17 @@ class TestPipelineConfig:
         config = PipelineConfig()
         assert config.report_formats == ["html"]
 
-    def test_default_drop_unmatched_drugbank(self):
-        # ClinSR-aligned default: retain candidates lacking DrugBank / MeSH
-        # rather than silently dropping them.
-        config = PipelineConfig()
-        assert config.drop_unmatched_drugbank is False
-
     def test_custom_values(self):
         config = PipelineConfig(
             data_source="aact",
             ingestion_filters={"keyword": "GLP-1"},
-            clustering_method="fuzzy",
-            llm_adjudicate_clusters=False,
             use_literature_lookup=False,
-            drop_unmatched_drugbank=False,
             report_output_path="/tmp/reports",
             report_formats=["html", "excel"],
         )
         assert config.data_source == "aact"
         assert config.ingestion_filters == {"keyword": "GLP-1"}
-        assert config.clustering_method == "fuzzy"
-        assert config.llm_adjudicate_clusters is False
         assert config.use_literature_lookup is False
-        assert config.drop_unmatched_drugbank is False
         assert config.report_output_path == "/tmp/reports"
         assert config.report_formats == ["html", "excel"]
 
@@ -173,21 +153,6 @@ class TestPipelineConstruction:
         config = PipelineConfig(ingestion_filters={"keyword": "GLP-1"})
         pipeline = Pipeline(config)
         assert pipeline._stages["ingestion"].filters == {"keyword": "GLP-1"}
-
-    def test_clustering_stage_receives_method(self):
-        config = PipelineConfig(clustering_method="fuzzy")
-        pipeline = Pipeline(config)
-        assert pipeline._stages["clustering"].method == "fuzzy"
-
-    def test_clustering_stage_receives_llm_adjudicate(self):
-        config = PipelineConfig(llm_adjudicate_clusters=False)
-        pipeline = Pipeline(config)
-        assert pipeline._stages["clustering"].llm_adjudicate is False
-
-    def test_clustering_stage_receives_drop_unmatched_drugbank(self):
-        config = PipelineConfig(drop_unmatched_drugbank=False)
-        pipeline = Pipeline(config)
-        assert pipeline._stages["clustering"].drop_unmatched_drugbank is False
 
     def test_classification_stage_receives_use_literature(self):
         config = PipelineConfig(use_literature_lookup=False)
@@ -425,8 +390,6 @@ class TestPipelineIntegration:
         config = PipelineConfig(
             data_source="aact",
             ingestion_filters={"mesh_term": "Peptides"},
-            clustering_method="fuzzy",
-            llm_adjudicate_clusters=False,
             use_literature_lookup=False,
             report_output_path=None,
             report_formats=["html"],

@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -28,6 +27,11 @@ _DROP_WORDS = {
     "protocol", "regimen", "arm", "group",
     # common carriers/excipients
     "saline", "electrolyte", "glucose", "amino", "acid", "acids",
+    # salt and counterion suffixes — strip so "Lepirudin HCl" canonicalizes to
+    # "lepirudin" and matches DrugBank's query_norm. Keeping this list
+    # aligned with the regex previously used by clustering._normalize.
+    "hcl", "hydrochloride", "sodium", "potassium", "acetate", "sulfate",
+    "mesylate", "tartrate", "maleate", "fumarate", "phosphate",
 }
 
 _ROMAN = {"i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5"}
@@ -155,47 +159,3 @@ def load_drugbank_synonyms(
     return forward, reverse
 
 
-def match_drug_name(
-    drug_name: str,
-    best_rows: pd.DataFrame,
-    best_rows_norm: pd.DataFrame,
-    synonym_reverse: Optional[dict[str, str]] = None,
-) -> Optional[str]:
-    """Three-level lookup: exact canonical, then first-word, then synonym.
-
-    Args:
-        drug_name:        the drug name to look up
-        best_rows:        DataFrame deduped by query_name
-        best_rows_norm:   DataFrame deduped by query_norm; primary lookup target
-        synonym_reverse:  optional synonym_norm -> drugbank_id map; used when
-                          the name is neither a canonical DrugBank query_norm
-                          nor a first-word prefix of one (e.g. codename-only
-                          rows whose INN is in DrugBank under a different
-                          canonical name).
-
-    Returns:
-        drug_id string or None if no match found.
-    """
-    norm = canonicalize_drug_name(drug_name)
-
-    # Level 1: exact canonical match against query_norm
-    exact = best_rows_norm[best_rows_norm["query_norm"] == norm]
-    if not exact.empty:
-        return str(exact.iloc[0]["drug_id"])
-
-    # Level 2: first-word fallback
-    parts = norm.split()
-    if not parts:
-        return None
-    first_word = parts[0]
-    fallback = best_rows_norm[best_rows_norm["query_norm"] == first_word]
-    if not fallback.empty:
-        return str(fallback.iloc[0]["drug_id"])
-
-    # Level 3: synonym reverse-map (codename <-> INN recovery)
-    if synonym_reverse:
-        hit = synonym_reverse.get(norm)
-        if hit:
-            return str(hit)
-
-    return None
