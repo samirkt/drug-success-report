@@ -537,7 +537,7 @@ class TestTransitionRateDuration:
 # ---------------------------------------------------------------------------
 
 def _build(cid, trial_ids, modality="peptide", disease_area="metabolic",
-           outcome=CandidateOutcome.ONGOING, highest_phase=TrialPhase.PHASE_1,
+           outcome=CandidateOutcome.UNKNOWN, highest_phase=TrialPhase.PHASE_1,
            approval_date=None, commercialization_date=None):
     from pipeline.models import CandidateAttributes
     cand = Candidate(
@@ -625,11 +625,16 @@ class TestJoinPhasesObserved:
         assert {"Approval", "Market"} <= records[0]["phases_observed"]
 
     def test_join_without_trial_table_yields_empty_clinical_phases(self):
+        """Without trial data, cohort (denominator) stays empty. Advancement
+        reflects the outcome-only rule: an ``Unknown`` candidate is treated
+        as failed at its highest_phase and gets that phase credited to
+        ``phases_advanced``, while cohort stays empty since no terminal
+        trial evidence is present."""
         triples = [_build("c1", ["N1"])]
         ct, at, ot, _ = _tables(triples, [])
         records = FunnelAggregationStage()._join(ct, at, ot, None)
         assert records[0]["phases_observed"] == set()
-        assert records[0]["phases_advanced"] == set()
+        assert records[0]["phases_advanced"] == {"Phase 1"}
 
     def test_recruiting_trial_counts_as_advancement_only(self):
         """COMPLETED P1 + RECRUITING P2 → P1 in cohort, P2 in advancement only."""
@@ -763,8 +768,26 @@ class TestJoinStaleStatusPromotion:
         records = self._stage()._join(ct, at, ot, tt)
         assert "Phase 2" not in records[0]["phases_observed"]
 
-    def test_terminated_status_still_adds_cohort_regardless_of_date(self):
-        """Terminal statuses are unconditionally cohort-eligible (no regression)."""
+    def test_terminated_status_old_enough_to_pass_ongoing_check_adds_cohort(self):
+        """A TERMINATED trial is terminal-status-wise, but under the new
+        ongoing-omission rule a candidate whose latest trial activity is
+        within `stale_cutoff_years` of the reference date is considered
+        still-in-play and omitted entirely. A sufficiently-old TERMINATED
+        trial clears the ongoing check and contributes to cohort."""
+        triples = [_build("c1", ["N1"])]
+        trials = [RawTrial(
+            nct_id="N1", title="", intervention="", indication="",
+            sponsor="", phase=TrialPhase.PHASE_2, status=TrialStatus.TERMINATED,
+            start_date=date(2018, 1, 1), completion_date=None,
+        )]
+        ct, at, ot, tt = _tables(triples, trials)
+        records = self._stage()._join(ct, at, ot, tt)
+        assert "Phase 2" in records[0]["phases_observed"]
+
+    def test_recent_terminated_trial_is_omitted_as_ongoing(self):
+        """A TERMINATED trial whose last activity is within the cutoff
+        window pre-empts cohort admission under the ongoing rule — the
+        candidate is still considered in-play until the window elapses."""
         triples = [_build("c1", ["N1"])]
         trials = [RawTrial(
             nct_id="N1", title="", intervention="", indication="",
@@ -773,7 +796,7 @@ class TestJoinStaleStatusPromotion:
         )]
         ct, at, ot, tt = _tables(triples, trials)
         records = self._stage()._join(ct, at, ot, tt)
-        assert "Phase 2" in records[0]["phases_observed"]
+        assert records[0]["phases_observed"] == set()
 
     def test_two_year_default_promotes_trial_inactive_for_two_and_a_half_years(self):
         """ClinSR-aligned 2y default: a trial with last activity 2.5y before the

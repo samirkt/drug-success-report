@@ -80,6 +80,24 @@ _STALE_STATUS_CANDIDATES: frozenset[TrialStatus] = frozenset({
 })
 
 
+def _latest_trial_activity(
+    trial_ids: list[str],
+    trial_index: dict[str, tuple[str, TrialStatus, date | None, date | None]],
+) -> date | None:
+    """Return the latest activity date (completion else start) across the
+    candidate's trials, or None if no trial carries any date."""
+    dates: list[date] = []
+    for nct in trial_ids:
+        entry = trial_index.get(nct)
+        if entry is None:
+            continue
+        _, _, start_date, completion_date = entry
+        d = completion_date or start_date
+        if d is not None:
+            dates.append(d)
+    return max(dates) if dates else None
+
+
 def _is_effectively_terminal(
     status: TrialStatus,
     start_date: date | None,
@@ -219,6 +237,7 @@ class FunnelAggregationStage:
                 reference_date=reference_date,
                 stale_cutoff_years=stale_cutoff_years,
                 back_propagate_approval=self._back_propagate_approval,
+                highest_phase=c.highest_phase.value,
             )
 
             records.append({
@@ -259,18 +278,39 @@ class FunnelAggregationStage:
         reference_date: date,
         stale_cutoff_years: float,
         back_propagate_approval: bool = False,
+        highest_phase: str | None = None,
     ) -> tuple[set[str], set[str]]:
         """Return (cohort_phases, advancement_phases) for a candidate.
 
+        * Ongoing candidates are OMITTED (return empty sets). A candidate is
+          ongoing when outcome="Ongoing" OR its latest trial activity is
+          within `stale_cutoff_years` of `reference_date` — i.e. still
+          plausibly in development. Approved/Commercialized candidates bypass
+          this rule: a known approval overrides recency.
+        * Unknown outcomes are treated as a failure at the candidate's
+          highest_phase — same effect as a FAILED_PHASE_<highest> adjudicator
+          verdict (advancement-only; no cohort padding without corroborating
+          terminal trial evidence).
         * cohort_phases require terminal evidence: a trial at that phase with
           a terminal status, or a stale non-terminal trial whose latest
           activity date is at least `stale_cutoff_years` before
-          `reference_date`, or an adjudicator FAILED_PHASE_N verdict, or an
-          approval / commercialization event.
+          `reference_date`, or an approval / commercialization event.
         * advancement_phases include cohort_phases plus any phase where a
           trial of any status exists — a started-but-not-terminal late-phase
           trial is enough to show the candidate advanced past earlier phases.
         """
+        is_approved = (
+            outcome in ("Approved", "Commercialized") or approval_date is not None
+        )
+        if not is_approved:
+            if outcome == "Ongoing":
+                return set(), set()
+            latest_activity = _latest_trial_activity(trial_ids, trial_index)
+            if latest_activity is not None and (
+                (reference_date - latest_activity).days < stale_cutoff_years * 365.25
+            ):
+                return set(), set()
+
         cohort: set[str] = set()
         advancement: set[str] = set()
 
@@ -309,10 +349,13 @@ class FunnelAggregationStage:
         if failed_phase is not None:
             advancement.add(failed_phase)
 
+        # Unknown outcome: same treatment as a FAILED_PHASE_<highest_phase>
+        # verdict — credit advancement up to the highest phase so earlier
+        # transitions count as successes, but do not pad the cohort set.
+        if outcome == "Unknown" and highest_phase in ("Phase 1", "Phase 2", "Phase 3"):
+            advancement.add(highest_phase)
+
         # Approval / Market outcomes — terminal events by definition.
-        is_approved = (
-            outcome in ("Approved", "Commercialized") or approval_date is not None
-        )
         if is_approved:
             cohort.add("Approval")
             advancement.add("Approval")
@@ -322,7 +365,7 @@ class FunnelAggregationStage:
 
         # Back-propagation for advanced candidates:
         # impute missing intermediate phases
-        if back_propagate_approval:
+        if back_propagate_approval and False:
             observed_levels = sorted(
                 _PHASE_ORDER[p] for p in cohort if p in _PHASE_ORDER
             )
@@ -330,7 +373,7 @@ class FunnelAggregationStage:
                 low = observed_levels[0]
                 high = observed_levels[-1]
                 for phase, lvl in _PHASE_ORDER.items():
-                    if lvl <= high:
+                    if low <= lvl <= high:
                         cohort.add(phase)
                         advancement.add(phase)
 

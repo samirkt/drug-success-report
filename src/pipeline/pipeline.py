@@ -165,7 +165,7 @@ class PipelineConfig:
     # registry records whose status field was never updated. Aligned with
     # ClinSR's 2-year Trial Failure Threshold (Zhou et al., Nat Commun
     # 16:9537, 2025).
-    aggregation_reference_date: Optional[date] = None  # None → date.today() at run time
+    aggregation_reference_date: Optional[date] = field(default_factory=lambda: date(2006, 12, 31))  # anchor for 2000-2006 cohort; set to None for date.today()
     stale_trial_cutoff_years: float = 2.0
     # When True (ClinSR-aligned default), approved / commercialized
     # candidates are credited as having reached Phase 1, Phase 2, and

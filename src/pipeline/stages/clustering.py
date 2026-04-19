@@ -99,9 +99,9 @@ def _resolve_drug_key(
             return ("db", db_id)
         return ("mesh", leaf_norm)
 
-    tokens = row_norm.split()
-    if len(tokens) >= 2 and tokens[0] in db_norm_to_id:
-        return ("name", tokens[0])
+    #tokens = row_norm.split()
+    #if len(tokens) >= 2 and tokens[0] in db_norm_to_id:
+    #    return ("name", tokens[0])
 
     return ("name", row_norm)
 

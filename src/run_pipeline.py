@@ -133,11 +133,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--year-range",
-        default=None,
+        default="2000-2006",
         metavar="START-END",
         help="Restrict the entire report to candidates whose earliest trial "
              "started in [START, END] (inclusive), e.g. --year-range 2000-2008. "
-             "Candidates with no start date are dropped.",
+             "Candidates with no start date are dropped. Default: 2000-2006.",
     )
     parser.add_argument(
         "--benchmark",
