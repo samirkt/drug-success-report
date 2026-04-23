@@ -138,6 +138,7 @@ class PipelineConfig:
 
     # DrugBank normalization / deduplication
     drugbank_csv_path: Optional[Path] = None
+    require_drugbank_match: bool = False
 
     # Reporting
     report_output_path: str | None = None
@@ -465,6 +466,7 @@ class Pipeline:
             "clustering": CandidateClusteringStage(
                 drugbank_csv_path=cfg.drugbank_csv_path,
                 drugbank_synonyms_csv_path=cfg.drugbank_synonyms_csv,
+                require_drugbank_match=cfg.require_drugbank_match,
             ),
             "classification": AttributeClassificationStage(
                 use_literature=cfg.use_literature_lookup,

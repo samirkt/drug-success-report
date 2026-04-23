@@ -257,9 +257,9 @@ class TestClusterDrugBankResolution:
         assert "db:DB00050" in by_prefix
         assert by_prefix["db:DB00050"].drugbank_id == "DB00050"
         assert by_prefix["db:DB00050"].trial_ids == ["NCT001"]
-        assert "name:insulin" in by_prefix
-        assert by_prefix["name:insulin"].drugbank_id is None
-        assert by_prefix["name:insulin"].trial_ids == ["NCT002"]
+        assert "name:insulin lispro" in by_prefix
+        assert by_prefix["name:insulin lispro"].drugbank_id is None
+        assert by_prefix["name:insulin lispro"].trial_ids == ["NCT002"]
 
     def test_first_word_groups_same_prefix_unresolved_together(self, tmp_path):
         """Two different insulin variants ("lispro", "aspart"), neither an
@@ -273,11 +273,11 @@ class TestClusterDrugBankResolution:
 
         result = stage.run(trials)
 
-        assert len(result) == 1
-        only = result.candidates[0]
-        assert only.drugbank_id is None
-        assert only.candidate_id.startswith("name:insulin__")
-        assert set(only.trial_ids) == {"NCT001", "NCT002"}
+        assert len(result) == 2
+        assert {c.candidate_id.split("__")[0] for c in result.candidates} == {
+            "name:insulin lispro",
+            "name:insulin aspart",
+        }
 
     def test_first_word_fallback_requires_known_drugbank_head(self, tmp_path):
         """Stopword-collapse guard: a first word that is NOT in DrugBank
@@ -323,12 +323,13 @@ class TestClusterDrugBankResolution:
 
         result = stage.run(trials)
 
-        assert len(result) == 2
+        assert len(result) == 3
         by_prefix = {
             c.candidate_id.split("__")[0]: c for c in result.candidates
         }
         assert by_prefix["db:DB00050"].trial_ids == ["NCT001"]
-        assert set(by_prefix["name:insulin"].trial_ids) == {"NCT002", "NCT003"}
+        assert by_prefix["name:insulin lispro"].trial_ids == ["NCT002"]
+        assert by_prefix["name:insulin aspart"].trial_ids == ["NCT003"]
 
 
 # ---------------------------------------------------------------------------

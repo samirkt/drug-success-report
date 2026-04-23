@@ -109,6 +109,14 @@ def parse_args() -> argparse.Namespace:
         help="Path to drugbank_approvals.csv for drug normalization and deduplication.",
     )
     parser.add_argument(
+        "--require-drugbank-match",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Keep only candidates that resolve to a DrugBank ID during clustering. "
+             "Pass --no-require-drugbank-match to keep unmatched candidates. "
+             "When unset, the PipelineConfig default applies.",
+    )
+    parser.add_argument(
         "--all-modalities",
         action="store_true",
         default=False,
@@ -148,7 +156,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--adjudication-method",
         choices=["fda_timeline", "llm_direct"],
-        default="fda_timeline",
+        default="llm_direct",
         help="Outcome adjudication method. 'fda_timeline' reconstructs each drug's "
              "FDA approval timeline from openFDA and matches indications against it "
              "(default). 'llm_direct' asks the LLM directly and uses the KnowledgeCache.",
@@ -257,6 +265,8 @@ def main() -> None:
         ingestion_filters=ingestion_filters,
         cache_path=cache_path,
         drugbank_csv_path=drugbank_csv_path,
+        **({"require_drugbank_match": args.require_drugbank_match}
+           if args.require_drugbank_match is not None else {}),
         report_output_path=args.output,
         report_formats=args.formats,
         max_trials=args.max_trials if args.max_trials > 0 else None,

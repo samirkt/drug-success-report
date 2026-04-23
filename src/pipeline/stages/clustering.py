@@ -191,6 +191,7 @@ class CandidateClusteringStage:
         self,
         drugbank_csv_path: Optional[Path] = None,
         drugbank_synonyms_csv_path: Optional[Path] = None,
+        require_drugbank_match: bool = False,
     ):
         """
         Args:
@@ -203,14 +204,18 @@ class CandidateClusteringStage:
                 ``scripts/build_drugbank_derivatives.py``). When provided,
                 codename / brand / INN variants for the same DrugBank ID
                 resolve to the same drug_key.
+            require_drugbank_match:
+                When True, drop candidates that could not be
+                matched to a DrugBank ID.
         """
         self.drugbank_csv_path = drugbank_csv_path
         self.drugbank_synonyms_csv_path = drugbank_synonyms_csv_path
+        self.require_drugbank_match = require_drugbank_match
 
     def run(self, trial_table: TrialTable) -> CandidateTable:
         """Cluster trials into candidates. Returns a populated CandidateTable."""
         clusters = self._cluster(trial_table)
-        candidates = [
+        all_candidates = [
             self._build_candidate(cid, trials)
             for cid, trials in tqdm(
                 clusters.items(),
@@ -219,6 +224,17 @@ class CandidateClusteringStage:
                 disable=not sys.stderr.isatty(),
             )
         ]
+        candidates = all_candidates
+        if self.require_drugbank_match:
+            candidates = [c for c in all_candidates if c.drugbank_id]
+            if len(candidates) != len(all_candidates):
+                dropped = [c for c in all_candidates if not c.drugbank_id]
+                dropped_trials = sum(len(c.trial_ids) for c in dropped)
+                logger.info(
+                    "Filtered out %d non-DrugBank candidates (%d trials).",
+                    len(dropped),
+                    dropped_trials,
+                )
         self._log_summary(candidates)
         return CandidateTable(candidates=candidates)
 
