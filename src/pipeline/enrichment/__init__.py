@@ -9,5 +9,11 @@ a given enrichment is enabled or not.
 
 from .base import EnrichmentStage, run_enrichments
 from .smiles import SmilesEnrichment
+from .targets import TargetsEnrichment
 
-__all__ = ["EnrichmentStage", "SmilesEnrichment", "run_enrichments"]
+__all__ = [
+    "EnrichmentStage",
+    "SmilesEnrichment",
+    "TargetsEnrichment",
+    "run_enrichments",
+]

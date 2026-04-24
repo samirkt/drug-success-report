@@ -613,11 +613,13 @@ class Pipeline:
         Each stage's own `is_available` check decides whether it runs;
         toggled-off or missing-data stages are skipped silently here.
         """
-        from .enrichment import SmilesEnrichment
+        from .enrichment import SmilesEnrichment, TargetsEnrichment
 
         stages: list = []
         if self.config.enable_smiles:
             stages.append(SmilesEnrichment())
-        # Targets (step 2) and ICD-10 (step 3) get registered here as they
-        # land in subsequent steps of the plan.
+        if self.config.enable_targets:
+            stages.append(TargetsEnrichment())
+        # ICD-10 (step 3) gets registered here as it lands in a subsequent
+        # step of the plan.
         return stages

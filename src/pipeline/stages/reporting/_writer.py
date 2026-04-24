@@ -59,6 +59,118 @@ def write_csv(report: ReportOutput, output_path: str) -> None:
         writer.writerows(rows)
 
 
+def write_candidate_detail(
+    candidate_table: CandidateTable,
+    attribute_table: AttributeTable,
+    outcome_table: OutcomeTable,
+    output_path: str,
+) -> None:
+    """Write one CSV row per candidate with every field joined in — for debugging.
+
+    Sibling of `write_trial_detail` but candidate-centric: no per-trial
+    expansion. Dumps every `Candidate` dataclass field (including the
+    enrichment fields — SMILES, drug targets, ICD-10), plus the joined
+    `CandidateAttributes` and `CandidateOutcomeRecord` (modality / disease
+    area / outcome / approval dates / LLM reasoning strings). List-valued
+    fields are pipe-joined to match the `trial_detail.csv` convention.
+    """
+    import csv
+
+    headers = [
+        # Candidate dataclass fields
+        "candidate_id",
+        "drug_name",
+        "drug_name_raw",
+        "indication",
+        "highest_phase",
+        "trial_count",
+        "trial_ids",
+        "sponsors",
+        "earliest_start_date",
+        "latest_completion_date",
+        "drugbank_id",
+        "mesh_drug",
+        "mesh_indication",
+        "mesh_condition_tree_numbers",
+        "single_arm_p_values_count",
+        # Enrichment fields (schema v2+)
+        "smiles",
+        "drug_targets",
+        "target_names",
+        "icd10_code",
+        "icd10_description",
+        # CandidateAttributes
+        "modality",
+        "disease_area",
+        "modality_confidence",
+        "disease_confidence",
+        "modality_reasoning",
+        # CandidateOutcomeRecord
+        "outcome",
+        "outcome_confidence",
+        "outcome_reasoning",
+        "outcome_evidence_sources",
+        "approval_date",
+        "commercialization_date",
+    ]
+
+    csv_path = os.path.join(output_path, "candidate_detail.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+
+        for c in candidate_table.candidates:
+            attrs = attribute_table.attributes.get(c.candidate_id)
+            out = outcome_table.outcomes.get(c.candidate_id)
+
+            writer.writerow({
+                "candidate_id": c.candidate_id,
+                "drug_name": c.drug_name,
+                "drug_name_raw": c.drug_name_raw,
+                "indication": c.indication,
+                "highest_phase": c.highest_phase.value,
+                "trial_count": len(c.trial_ids),
+                "trial_ids": "|".join(c.trial_ids),
+                "sponsors": "|".join(c.sponsors),
+                "earliest_start_date": (
+                    c.earliest_start_date.isoformat() if c.earliest_start_date else ""
+                ),
+                "latest_completion_date": (
+                    c.latest_completion_date.isoformat()
+                    if c.latest_completion_date else ""
+                ),
+                "drugbank_id": c.drugbank_id or "",
+                "mesh_drug": c.mesh_drug or "",
+                "mesh_indication": c.mesh_indication or "",
+                "mesh_condition_tree_numbers": "|".join(c.mesh_condition_tree_numbers),
+                "single_arm_p_values_count": len(c.single_arm_p_values),
+                "smiles": c.smiles or "",
+                "drug_targets": "|".join(c.drug_targets),
+                "target_names": "|".join(c.target_names),
+                "icd10_code": c.icd10_code or "",
+                "icd10_description": c.icd10_description or "",
+                "modality": attrs.drug_modality if attrs else "",
+                "disease_area": attrs.disease_area if attrs else "",
+                "modality_confidence": attrs.modality_confidence if attrs else "",
+                "disease_confidence": attrs.disease_confidence if attrs else "",
+                "modality_reasoning": attrs.reasoning if attrs else "",
+                "outcome": out.outcome.value if out else "",
+                "outcome_confidence": out.confidence if out else "",
+                "outcome_reasoning": out.reasoning if out else "",
+                "outcome_evidence_sources": (
+                    "|".join(out.evidence_sources) if out else ""
+                ),
+                "approval_date": (
+                    out.approval_date.isoformat()
+                    if (out and out.approval_date) else ""
+                ),
+                "commercialization_date": (
+                    out.commercialization_date.isoformat()
+                    if (out and out.commercialization_date) else ""
+                ),
+            })
+
+
 def write_trial_detail(
     candidate_table: CandidateTable,
     attribute_table: AttributeTable,
