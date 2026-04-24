@@ -20,16 +20,21 @@ from pipeline.models import CandidateTable
 from utils.tiered_router import CostLedger
 
 
-# Tuple layout (no query_norm — the helper computes it from source_name):
+# Tuple layout (no query_norm — the helper computes it from source_name).
+# The trailing canonical_smiles column is optional; rows that omit it get
+# NULL inserted so legacy fixtures keep working against the new schema.
 # (source_name, source_kind, syn_type, chembl_id, target_chembl_id,
-#  target_pref_name, target_type, uniprot_accession, action_type)
-SnapshotRow = tuple[str, str, str | None, str, str, str, str, str, str]
+#  target_pref_name, target_type, uniprot_accession, action_type,
+#  canonical_smiles?)
+SnapshotRow = tuple  # heterogeneous; see layout above
 
 
 def _make_snapshot(
     path: Path,
     rows: list[SnapshotRow],
     user_version: int = 35,
+    *,
+    include_smiles_column: bool = True,
 ) -> None:
     """Build a slim name-keyed targets snapshot at ``path``.
 
@@ -38,34 +43,70 @@ def _make_snapshot(
     index, same PRAGMA user_version stamp. `query_norm` is derived from
     ``source_name`` via ``canonicalize_drug_name`` so fixtures stay
     aligned with whatever normalization policy the pipeline applies.
+
+    When ``include_smiles_column=False`` the snapshot is built with the
+    legacy 10-column schema (no ``canonical_smiles``) so tests can
+    exercise the ChEMBL-SMILES enrichment's missing-column fallback.
     """
     conn = sqlite3.connect(path)
     try:
-        conn.execute(
-            """
-            CREATE TABLE name_targets (
-                query_norm          TEXT NOT NULL,
-                source_name         TEXT NOT NULL,
-                source_kind         TEXT NOT NULL,
-                syn_type            TEXT,
-                chembl_id           TEXT NOT NULL,
-                target_chembl_id    TEXT,
-                target_pref_name    TEXT,
-                target_type         TEXT,
-                uniprot_accession   TEXT,
-                action_type         TEXT
+        if include_smiles_column:
+            conn.execute(
+                """
+                CREATE TABLE name_targets (
+                    query_norm          TEXT NOT NULL,
+                    source_name         TEXT NOT NULL,
+                    source_kind         TEXT NOT NULL,
+                    syn_type            TEXT,
+                    chembl_id           TEXT NOT NULL,
+                    target_chembl_id    TEXT,
+                    target_pref_name    TEXT,
+                    target_type         TEXT,
+                    uniprot_accession   TEXT,
+                    action_type         TEXT,
+                    canonical_smiles    TEXT
+                )
+                """
             )
-            """
-        )
-        expanded = [
-            (canonicalize_drug_name(source_name), *row)
-            for row in rows
-            for source_name in (row[0],)
-        ]
-        conn.executemany(
-            "INSERT INTO name_targets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            expanded,
-        )
+            expanded = []
+            for row in rows:
+                source_name = row[0]
+                # Pad rows that omit the trailing canonical_smiles column.
+                padded = row if len(row) == 10 else (*row, None)
+                expanded.append((canonicalize_drug_name(source_name), *padded))
+            conn.executemany(
+                "INSERT INTO name_targets VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                expanded,
+            )
+        else:
+            conn.execute(
+                """
+                CREATE TABLE name_targets (
+                    query_norm          TEXT NOT NULL,
+                    source_name         TEXT NOT NULL,
+                    source_kind         TEXT NOT NULL,
+                    syn_type            TEXT,
+                    chembl_id           TEXT NOT NULL,
+                    target_chembl_id    TEXT,
+                    target_pref_name    TEXT,
+                    target_type         TEXT,
+                    uniprot_accession   TEXT,
+                    action_type         TEXT
+                )
+                """
+            )
+            # Legacy fixtures pass 9-column rows; strip any trailing smiles.
+            expanded = []
+            for row in rows:
+                source_name = row[0]
+                trimmed = row[:9]
+                expanded.append((canonicalize_drug_name(source_name), *trimmed))
+            conn.executemany(
+                "INSERT INTO name_targets VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                expanded,
+            )
         conn.execute("CREATE INDEX idx_query_norm ON name_targets(query_norm)")
         conn.execute(f"PRAGMA user_version = {user_version}")
         conn.commit()

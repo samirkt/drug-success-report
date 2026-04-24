@@ -28,7 +28,8 @@ Output
                      target_pref_name   TEXT,
                      target_type        TEXT,
                      uniprot_accession  TEXT,            -- pipe-joined
-                     action_type        TEXT)
+                     action_type        TEXT,
+                     canonical_smiles   TEXT)            -- from molecule_dictionary
 
         CREATE INDEX idx_query_norm ON name_targets(query_norm);
 
@@ -75,6 +76,10 @@ WITH drug_targets AS (
     SELECT
         dm.molregno                        AS molregno,
         md.chembl_id                       AS chembl_id,
+        -- canonical_smiles lives on compound_structures, not
+        -- molecule_dictionary. Biologics often have no compound_structures
+        -- row at all, so the LEFT JOIN is load-bearing.
+        comps.canonical_smiles             AS canonical_smiles,
         td.chembl_id                       AS target_chembl_id,
         td.pref_name                       AS target_pref_name,
         td.target_type                     AS target_type,
@@ -85,11 +90,12 @@ WITH drug_targets AS (
         dm.action_type                     AS action_type
     FROM drug_mechanism dm
     JOIN molecule_dictionary md   ON md.molregno = dm.molregno
+    LEFT JOIN compound_structures comps ON comps.molregno = dm.molregno
     JOIN target_dictionary   td   ON td.tid      = dm.tid
     LEFT JOIN target_components tc ON tc.tid = td.tid
     LEFT JOIN component_sequences cs ON cs.component_id = tc.component_id
-    GROUP BY dm.molregno, md.chembl_id, td.chembl_id, td.pref_name,
-             td.target_type, dm.action_type
+    GROUP BY dm.molregno, md.chembl_id, comps.canonical_smiles,
+             td.chembl_id, td.pref_name, td.target_type, dm.action_type
 )
 SELECT md.pref_name  AS source_name,
        'pref_name'   AS source_kind,
@@ -99,7 +105,8 @@ SELECT md.pref_name  AS source_name,
        dt.target_pref_name,
        dt.target_type,
        dt.uniprot_accession,
-       dt.action_type
+       dt.action_type,
+       dt.canonical_smiles
 FROM drug_targets dt
 JOIN molecule_dictionary md ON md.molregno = dt.molregno
 WHERE md.pref_name IS NOT NULL AND md.pref_name <> ''
@@ -114,7 +121,8 @@ SELECT ms.synonyms   AS source_name,
        dt.target_pref_name,
        dt.target_type,
        dt.uniprot_accession,
-       dt.action_type
+       dt.action_type,
+       dt.canonical_smiles
 FROM drug_targets dt
 JOIN molecule_synonyms ms ON ms.molregno = dt.molregno
 WHERE ms.synonyms IS NOT NULL AND ms.synonyms <> ''
@@ -146,7 +154,8 @@ def build_snapshot(chembl_db: Path, out_db: Path) -> None:
                     target_pref_name    TEXT,
                     target_type         TEXT,
                     uniprot_accession   TEXT,
-                    action_type         TEXT
+                    action_type         TEXT,
+                    canonical_smiles    TEXT
                 )
                 """
             )
@@ -167,6 +176,7 @@ def build_snapshot(chembl_db: Path, out_db: Path) -> None:
                 target_type,
                 uniprot_accession,
                 action_type,
+                canonical_smiles,
             ) in cur:
                 rows_in += 1
                 query_norm = canonicalize_drug_name(source_name or "")
@@ -184,20 +194,21 @@ def build_snapshot(chembl_db: Path, out_db: Path) -> None:
                         target_type,
                         uniprot_accession or "",
                         action_type,
+                        canonical_smiles,
                     )
                 )
                 rows_out += 1
                 if len(batch) >= BATCH_SIZE:
                     dst.executemany(
                         "INSERT INTO name_targets VALUES "
-                        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         batch,
                     )
                     batch.clear()
             if batch:
                 dst.executemany(
                     "INSERT INTO name_targets VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     batch,
                 )
 

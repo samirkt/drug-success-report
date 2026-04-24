@@ -99,6 +99,11 @@ def write_candidate_detail(
         "target_names",
         "icd10_code",
         "icd10_description",
+        "opentargets_moa",
+        "opentargets_action_type",
+        "opentargets_targets",
+        "opentargets_pathways",
+        "opentargets_indication_max_phase",
         # CandidateAttributes
         "modality",
         "disease_area",
@@ -149,6 +154,14 @@ def write_candidate_detail(
                 "target_names": "|".join(c.target_names),
                 "icd10_code": c.icd10_code or "",
                 "icd10_description": c.icd10_description or "",
+                "opentargets_moa": c.opentargets_moa or "",
+                "opentargets_action_type": c.opentargets_action_type or "",
+                "opentargets_targets": "|".join(c.opentargets_targets),
+                "opentargets_pathways": "|".join(c.opentargets_pathways),
+                "opentargets_indication_max_phase": (
+                    str(c.opentargets_indication_max_phase)
+                    if c.opentargets_indication_max_phase is not None else ""
+                ),
                 "modality": attrs.drug_modality if attrs else "",
                 "disease_area": attrs.disease_area if attrs else "",
                 "modality_confidence": attrs.modality_confidence if attrs else "",

@@ -248,6 +248,33 @@ def parse_args() -> argparse.Namespace:
              "Skipped cleanly when --chembl-snapshot is missing.",
     )
     parser.add_argument(
+        "--enable-chembl-smiles",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Fall back to ChEMBL canonical_smiles for candidates DrugBank "
+             "left empty — biologic coverage in particular. Reports "
+             "smiles_chembl and smiles_combined coverage on top of the "
+             "DrugBank smiles line. Requires --chembl-snapshot. Enabled by "
+             "default.",
+    )
+    parser.add_argument(
+        "--enable-opentargets",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Attach OpenTargets mechanism-of-action, target approved "
+             "symbols, Reactome pathways, and per-indication max "
+             "development phase. Reports separate coverage lines for each "
+             "feature. Requires --opentargets-snapshot. Enabled by default.",
+    )
+    parser.add_argument(
+        "--opentargets-snapshot",
+        default=None,
+        metavar="PATH",
+        help="Path to an OpenTargets SQLite snapshot built by "
+             "scripts/build_opentargets_snapshot.py. If omitted the OT "
+             "enrichment is skipped with a single warning.",
+    )
+    parser.add_argument(
         "--enable-icd10",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -301,6 +328,9 @@ def main() -> None:
             )
 
     chembl_snapshot_path = Path(args.chembl_snapshot) if args.chembl_snapshot else None
+    opentargets_snapshot_path = (
+        Path(args.opentargets_snapshot) if args.opentargets_snapshot else None
+    )
 
     config = PipelineConfig(
         data_source=args.source,
@@ -332,9 +362,14 @@ def main() -> None:
            if args.enable_smiles is not None else {}),
         **({"enable_targets": args.enable_targets}
            if args.enable_targets is not None else {}),
+        **({"enable_chembl_smiles": args.enable_chembl_smiles}
+           if args.enable_chembl_smiles is not None else {}),
+        **({"enable_opentargets": args.enable_opentargets}
+           if args.enable_opentargets is not None else {}),
         **({"enable_icd10": args.enable_icd10}
            if args.enable_icd10 is not None else {}),
         chembl_snapshot_path=chembl_snapshot_path,
+        opentargets_snapshot_path=opentargets_snapshot_path,
         icd10_granularity=args.icd10_granularity,
         **_resolve_perf_overrides(args),
     )

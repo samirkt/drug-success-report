@@ -125,6 +125,19 @@ class Candidate:
     target_names: list[str] = field(default_factory=list)   # ChEMBL pref_names
     icd10_code: Optional[str] = None
     icd10_description: Optional[str] = None
+    # OpenTargets — kept in its own namespace so the ChEMBL-derived
+    # `drug_targets`/`target_names` (UniProt + ChEMBL pref_name) do not
+    # collide with OT's gene-symbol + Ensembl identifiers. `opentargets_*`
+    # fields follow the same "empty default" pattern as the other
+    # enrichments so existing tests stay green when OT is off.
+    opentargets_moa: Optional[str] = None           # mechanism-of-action text
+    opentargets_action_type: Optional[str] = None   # e.g. AGONIST, INHIBITOR
+    opentargets_targets: list[str] = field(default_factory=list)   # approvedSymbols
+    opentargets_pathways: list[str] = field(default_factory=list)  # Reactome names
+    # Matched indication's `maxPhaseForIndication` from OT. Only populated
+    # when the candidate's `indication` (or `mesh_indication`) case-
+    # insensitively matches an OT indication row for the same drug.
+    opentargets_indication_max_phase: Optional[int] = None
 
 
 @dataclass

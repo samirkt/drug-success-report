@@ -149,10 +149,26 @@ class PipelineConfig:
     enable_smiles: bool = True
     enable_targets: bool = True
     enable_icd10: bool = True
+    # DrugBank carries `canonical-smiles` only for small molecules, so
+    # biologics (peptides, antibodies, approved protein drugs) come back
+    # empty. When True, a follow-on stage fills `Candidate.smiles` from
+    # ChEMBL's `molecule_dictionary.canonical_smiles` for candidates
+    # DrugBank left empty. Requires `chembl_snapshot_path` to be set and
+    # the snapshot to carry the `canonical_smiles` column (rebuild with
+    # the latest scripts/build_chembl_targets_snapshot.py).
+    enable_chembl_smiles: bool = True
+    # OpenTargets Platform enrichment: mechanism-of-action text, target
+    # approved symbols, Reactome pathways, and per-indication max
+    # development phase. Requires `opentargets_snapshot_path` to be set
+    # to a SQLite built by `scripts/build_opentargets_snapshot.py`.
+    enable_opentargets: bool = True
     # Pre-filtered ChEMBL targets snapshot built by
     # `scripts/build_chembl_targets_snapshot.py`. When None or missing on
     # disk the targets enrichment logs a warning and skips.
     chembl_snapshot_path: Optional[Path] = None
+    # OpenTargets snapshot built by `scripts/build_opentargets_snapshot.py`.
+    # When None or missing, the OT enrichment is skipped cleanly.
+    opentargets_snapshot_path: Optional[Path] = None
     # ICD-10 code granularity: "full" (e.g. C34.90), "category" (3-char
     # prefix, e.g. C34), or "chapter" (e.g. C00-D49).
     icd10_granularity: str = "category"
@@ -297,9 +313,12 @@ class Pipeline:
         if not stages:
             return candidate_table
         logger.info(
-            "Enrichments enabled: smiles=%s, targets=%s, icd10=%s (granularity=%s)",
+            "Enrichments enabled: smiles=%s, smiles_chembl=%s, targets=%s, "
+            "opentargets=%s, icd10=%s (granularity=%s)",
             self.config.enable_smiles,
+            self.config.enable_chembl_smiles,
             self.config.enable_targets,
+            self.config.enable_opentargets,
             self.config.enable_icd10,
             self.config.icd10_granularity,
         )
@@ -609,17 +628,29 @@ class Pipeline:
     def _build_enrichment_stages(self) -> list:
         """Instantiate enrichment stages for the features enabled in config.
 
-        Stages are returned in a fixed order (SMILES → targets → ICD-10).
-        Each stage's own `is_available` check decides whether it runs;
-        toggled-off or missing-data stages are skipped silently here.
+        Stages are returned in a fixed order (SMILES → targets →
+        ChEMBL-SMILES fallback → ICD-10). The DrugBank-backed SMILES
+        stage always runs before the ChEMBL fallback so the fallback
+        only fills candidates DrugBank left empty. Each stage's own
+        `is_available` check decides whether it actually runs; toggled-
+        off or missing-data stages are skipped silently here.
         """
-        from .enrichment import SmilesEnrichment, TargetsEnrichment
+        from .enrichment import (
+            ChemblSmilesEnrichment,
+            OpenTargetsEnrichment,
+            SmilesEnrichment,
+            TargetsEnrichment,
+        )
 
         stages: list = []
         if self.config.enable_smiles:
             stages.append(SmilesEnrichment())
         if self.config.enable_targets:
             stages.append(TargetsEnrichment())
+        if self.config.enable_chembl_smiles:
+            stages.append(ChemblSmilesEnrichment())
+        if self.config.enable_opentargets:
+            stages.append(OpenTargetsEnrichment())
         # ICD-10 (step 3) gets registered here as it lands in a subsequent
         # step of the plan.
         return stages

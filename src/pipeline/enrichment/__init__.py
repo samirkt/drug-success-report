@@ -8,11 +8,15 @@ a given enrichment is enabled or not.
 """
 
 from .base import EnrichmentStage, run_enrichments
+from .chembl_smiles import ChemblSmilesEnrichment
+from .opentargets import OpenTargetsEnrichment
 from .smiles import SmilesEnrichment
 from .targets import TargetsEnrichment
 
 __all__ = [
+    "ChemblSmilesEnrichment",
     "EnrichmentStage",
+    "OpenTargetsEnrichment",
     "SmilesEnrichment",
     "TargetsEnrichment",
     "run_enrichments",

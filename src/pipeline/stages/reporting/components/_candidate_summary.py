@@ -147,6 +147,24 @@ def candidate_summary_table(
             "fda_approval_date": fda_record.approval_date if fda_record else None,
             "fda_commercialization_date": fda_record.commercialization_date if fda_record else None,
             "outcomes_agree": outcomes_agree,
+            # Enrichment columns — empty when the corresponding stage
+            # was skipped or produced no match. Pipe-joined for list
+            # fields to match the trial_detail / candidate_detail CSV
+            # convention.
+            "smiles": cand.smiles or None,
+            "drug_targets": "|".join(cand.drug_targets) if cand.drug_targets else None,
+            "target_names": "|".join(cand.target_names) if cand.target_names else None,
+            "opentargets_moa": cand.opentargets_moa,
+            "opentargets_action_type": cand.opentargets_action_type,
+            "opentargets_targets": (
+                "|".join(cand.opentargets_targets)
+                if cand.opentargets_targets else None
+            ),
+            "opentargets_pathways": (
+                "|".join(cand.opentargets_pathways)
+                if cand.opentargets_pathways else None
+            ),
+            "opentargets_indication_max_phase": cand.opentargets_indication_max_phase,
         })
     return rows
 
