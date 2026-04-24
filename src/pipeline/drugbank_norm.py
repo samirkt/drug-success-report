@@ -7,11 +7,18 @@ standalone, per-name lookup function for use in the clustering stage.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+# Columns emitted by drugbank_minimizer schema v2. Older CSVs lack these —
+# enrichments that depend on them log a warning and degrade gracefully.
+_SCHEMA_V2_COLUMNS = ("smiles", "inchi", "logp", "molecular_weight")
 
 _DROP_WORDS = {
     # placebo / arms / generic trial wording
@@ -105,6 +112,15 @@ def load_drugbank_lookup(csv_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         best_rows_norm: deduplicated by query_norm (lowercased); most-complete row wins
     """
     df = pd.read_csv(csv_path, low_memory=False)
+
+    missing = [c for c in _SCHEMA_V2_COLUMNS if c not in df.columns]
+    if missing:
+        logger.warning(
+            "DrugBank CSV %s is missing schema-v2 columns %s — regenerate via "
+            "utils/drugbank_minimizer.py to enable chemical-property enrichments.",
+            csv_path,
+            missing,
+        )
 
     best_rows = (
         df

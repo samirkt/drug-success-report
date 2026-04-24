@@ -53,6 +53,7 @@ class CostLedger:
     """Accumulates token counts and dollar costs across a full pipeline run."""
 
     entries: list[dict[str, Any]] = field(default_factory=list)
+    coverage: dict[str, tuple[int, int]] = field(default_factory=dict)
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
@@ -112,6 +113,17 @@ class CostLedger:
                     "n_candidates": n_candidates,
                 }
             )
+
+    def record_coverage(self, stage: str, enriched: int, total: int) -> None:
+        """Record how many candidates a non-LLM enrichment stage populated.
+
+        Kept separate from the cost-tracking entries so enrichment stages
+        (SMILES, targets, ICD-10) can report their N/M figures through the
+        same `.log()` summary that the LLM cost block uses. Later
+        record_coverage calls for the same stage replace earlier ones.
+        """
+        with self._lock:
+            self.coverage[stage] = (enriched, total)
 
     def record_cache_hits(self, *, stage: str, n_hits: int) -> None:
         """Record candidates resolved from cache or deterministically (zero LLM cost).
@@ -207,6 +219,12 @@ class CostLedger:
             self.total_output_tokens,
             self.total_cost_usd,
         )
+        if self.coverage:
+            logger.info("Enrichment coverage:")
+            for stage in sorted(self.coverage):
+                enriched, total = self.coverage[stage]
+                pct = (100.0 * enriched / total) if total > 0 else 0.0
+                logger.info("  %s: %d/%d (%.0f%%)", stage, enriched, total, pct)
         for row in self.cost_per_candidate_summary():
             logger.info(
                 "  %s: $%.4f | %d LLM + %d cache = %d total | "

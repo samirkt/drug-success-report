@@ -232,6 +232,46 @@ def parse_args() -> argparse.Namespace:
         help="Per-call HTTP timeout in seconds for openFDA / DailyMed fetches "
              "(default 30). Falls back to FDA_HTTP_TIMEOUT env var.",
     )
+    parser.add_argument(
+        "--enable-smiles",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Attach DrugBank SMILES to each candidate. Enabled by default. "
+             "Requires a schema-v2 drugbank_approvals.csv (regenerate via "
+             "utils/drugbank_minimizer.py).",
+    )
+    parser.add_argument(
+        "--enable-targets",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Attach ChEMBL drug-target annotations. Enabled by default. "
+             "Skipped cleanly when --chembl-snapshot is missing.",
+    )
+    parser.add_argument(
+        "--enable-icd10",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Attach ICD-10-CM codes via the NLM Clinical Tables API. "
+             "Enabled by default. Cached in the knowledge cache.",
+    )
+    parser.add_argument(
+        "--chembl-snapshot",
+        default=None,
+        metavar="PATH",
+        help="Path to a pre-filtered ChEMBL targets SQLite snapshot "
+             "(scripts/build_chembl_targets_snapshot.py). Required for "
+             "drug-target enrichment; if omitted the targets stage is "
+             "skipped with a warning.",
+    )
+    parser.add_argument(
+        "--icd10-granularity",
+        choices=["full", "category", "chapter"],
+        default="category",
+        help="ICD-10 code granularity. 'full' keeps the full ICD-10-CM code "
+             "(e.g. C34.90); 'category' trims to the 3-char category "
+             "(e.g. C34); 'chapter' rolls up to ICD-10 chapter buckets. "
+             "Default: category.",
+    )
     return parser.parse_args()
 
 
@@ -260,6 +300,8 @@ def main() -> None:
                 f"Invalid --year-range '{args.year_range}': START must be <= END."
             )
 
+    chembl_snapshot_path = Path(args.chembl_snapshot) if args.chembl_snapshot else None
+
     config = PipelineConfig(
         data_source=args.source,
         ingestion_filters=ingestion_filters,
@@ -286,6 +328,14 @@ def main() -> None:
         fda_llm_api_key=args.fda_llm_api_key or os.getenv("FDA_LLM_API_KEY"),
         **({"drop_uncached_candidates": args.drop_uncached_candidates}
            if args.drop_uncached_candidates is not None else {}),
+        **({"enable_smiles": args.enable_smiles}
+           if args.enable_smiles is not None else {}),
+        **({"enable_targets": args.enable_targets}
+           if args.enable_targets is not None else {}),
+        **({"enable_icd10": args.enable_icd10}
+           if args.enable_icd10 is not None else {}),
+        chembl_snapshot_path=chembl_snapshot_path,
+        icd10_granularity=args.icd10_granularity,
         **_resolve_perf_overrides(args),
     )
 

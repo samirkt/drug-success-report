@@ -120,6 +120,11 @@ class Candidate:
     mesh_drug: Optional[str] = None  # canonical MeSH intervention term used in dedup
     mesh_condition_tree_numbers: list[str] = field(default_factory=list)
     single_arm_p_values: list[TrialPValue] = field(default_factory=list)
+    smiles: Optional[str] = None
+    drug_targets: list[str] = field(default_factory=list)   # UniProt accessions
+    target_names: list[str] = field(default_factory=list)   # ChEMBL pref_names
+    icd10_code: Optional[str] = None
+    icd10_description: Optional[str] = None
 
 
 @dataclass

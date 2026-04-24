@@ -140,6 +140,23 @@ class PipelineConfig:
     drugbank_csv_path: Optional[Path] = None
     require_drugbank_match: bool = False
 
+    # Candidate enrichments. Each feature is enabled by default; toggling
+    # any off simply skips its stage — no other pipeline behavior changes.
+    # Enrichments run after clustering, before the year/cache/sample
+    # filters. They add fields only; they do not modify `drug_name`,
+    # `indication`, `highest_phase`, or `candidate_id`, so every
+    # KnowledgeCache key derived from those fields remains stable.
+    enable_smiles: bool = True
+    enable_targets: bool = True
+    enable_icd10: bool = True
+    # Pre-filtered ChEMBL targets snapshot built by
+    # `scripts/build_chembl_targets_snapshot.py`. When None or missing on
+    # disk the targets enrichment logs a warning and skips.
+    chembl_snapshot_path: Optional[Path] = None
+    # ICD-10 code granularity: "full" (e.g. C34.90), "category" (3-char
+    # prefix, e.g. C34), or "chapter" (e.g. C00-D49).
+    icd10_granularity: str = "category"
+
     # Reporting
     report_output_path: str | None = None
     report_formats: list[str] = field(default_factory=lambda: ["html"])
@@ -223,6 +240,7 @@ class Pipeline:
 
         logger.info("Stage 2/5 — Candidate Clustering")
         result.candidate_table = self._run_clustering(result.trial_table)
+        result.candidate_table = self._run_enrichments(result.candidate_table)
         result.candidate_table = self._filter_by_year_range(result.candidate_table)
         result.candidate_table, result.trial_table = self._filter_to_cached_candidates(
             result.candidate_table, result.trial_table
@@ -265,6 +283,27 @@ class Pipeline:
 
     def _run_clustering(self, trial_table: TrialTable) -> CandidateTable:
         return self._stages["clustering"].run(trial_table)
+
+    def _run_enrichments(self, candidate_table: CandidateTable) -> CandidateTable:
+        """Apply each enabled enrichment stage in order.
+
+        Enrichments only add fields to candidates (SMILES, drug targets,
+        ICD-10 codes); they never change keys that feed KnowledgeCache.
+        Missing data sources log a warning and skip cleanly.
+        """
+        from .enrichment import run_enrichments
+
+        stages = self._enrichment_stages
+        if not stages:
+            return candidate_table
+        logger.info(
+            "Enrichments enabled: smiles=%s, targets=%s, icd10=%s (granularity=%s)",
+            self.config.enable_smiles,
+            self.config.enable_targets,
+            self.config.enable_icd10,
+            self.config.icd10_granularity,
+        )
+        return run_enrichments(candidate_table, stages, self.config, self._ledger)
 
     def _filter_by_year_range(self, candidate_table: CandidateTable) -> CandidateTable:
         """Drop candidates whose earliest trial start year is outside the configured window.
@@ -455,6 +494,8 @@ class Pipeline:
 
         adjudication_stage = self._build_adjudication_stage(cfg, cache)
 
+        self._enrichment_stages = self._build_enrichment_stages()
+
         return {
             "ingestion": TrialIngestionStage(
                 source=cfg.data_source,
@@ -564,3 +605,19 @@ class Pipeline:
             f"Unknown adjudication_method: {method!r}. "
             "Expected 'llm_direct' or 'fda_timeline'."
         )
+
+    def _build_enrichment_stages(self) -> list:
+        """Instantiate enrichment stages for the features enabled in config.
+
+        Stages are returned in a fixed order (SMILES → targets → ICD-10).
+        Each stage's own `is_available` check decides whether it runs;
+        toggled-off or missing-data stages are skipped silently here.
+        """
+        from .enrichment import SmilesEnrichment
+
+        stages: list = []
+        if self.config.enable_smiles:
+            stages.append(SmilesEnrichment())
+        # Targets (step 2) and ICD-10 (step 3) get registered here as they
+        # land in subsequent steps of the plan.
+        return stages

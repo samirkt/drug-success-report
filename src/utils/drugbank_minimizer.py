@@ -36,6 +36,13 @@ except Exception:
     USING_LXML = False
 
 
+# Bumped whenever the emitted CSV schema changes. Downstream consumers
+# (drugbank_norm.load_drugbank_lookup, the SMILES enrichment) log a warning
+# when they encounter a CSV missing columns they expect — but never fail,
+# so older caches keep working through the minimizer re-run cycle.
+MINIMIZER_SCHEMA_VERSION = 2
+
+
 # ----------------------------
 # helpers
 # ----------------------------
@@ -388,6 +395,53 @@ def search_drug_cat(drug_elem) -> bool:
                         return True
     return False
 
+_CALC_PROP_KINDS = {
+    "SMILES": "smiles",
+    "InChI": "inchi",
+    "logP": "logp",
+    "Molecular Weight": "molecular_weight",
+}
+
+
+def extract_calculated_properties(drug_elem) -> dict:
+    """Read selected entries from <calculated-properties>.
+
+    Returns a dict with keys `smiles`, `inchi`, `logp`, `molecular_weight`
+    (any missing keys are empty strings). DrugBank also exposes the same
+    concepts under <experimental-properties>; we prefer the calculated
+    values for consistency and only fall back to experimental when a
+    calculated value is absent.
+    """
+    out = {v: "" for v in _CALC_PROP_KINDS.values()}
+
+    def _read_properties(container, *, overwrite: bool) -> None:
+        for prop in list(container):
+            if strip_ns(prop.tag) != "property":
+                continue
+            kind = ""
+            value = ""
+            for node in list(prop):
+                ln = strip_ns(node.tag)
+                if ln == "kind":
+                    kind = (node.text or "").strip()
+                elif ln == "value":
+                    value = (node.text or "").strip()
+            key = _CALC_PROP_KINDS.get(kind)
+            if not key or not value:
+                continue
+            if overwrite or not out[key]:
+                out[key] = value
+
+    for c in list(drug_elem):
+        if strip_ns(c.tag) == "calculated-properties":
+            _read_properties(c, overwrite=True)
+    for c in list(drug_elem):
+        if strip_ns(c.tag) == "experimental-properties":
+            _read_properties(c, overwrite=False)
+
+    return out
+
+
 def extract_reported_modality(drug_elem) -> str:
     """
     Prefer DrugBank-reported drug type/modality from the <drug> element.
@@ -445,7 +499,6 @@ def stream_drugbank(xml_path: Path, out_csv: Path) -> None:
             "aa_sequence",
             "aa_length",
 
-            # NEW FIELDS
             "approval_groups",   # pipe-separated, e.g. approved|withdrawn
             "is_approved",       # 1/0
             "indications",       # pipe-separated free-text indications
@@ -458,6 +511,14 @@ def stream_drugbank(xml_path: Path, out_csv: Path) -> None:
             "cf_substituents",
             "peptide_like_cf",
             "peptide_drug_cat",
+
+            # Calculated chemical properties (schema v2). Sourced from
+            # DrugBank <calculated-properties>, falling back to
+            # <experimental-properties> when calculated is absent.
+            "smiles",
+            "inchi",
+            "logp",
+            "molecular_weight",
         ])
 
         context = ET.iterparse(str(xml_path), events=("end",))
@@ -501,6 +562,8 @@ def stream_drugbank(xml_path: Path, out_csv: Path) -> None:
             peptide_like_cf = peptide_like_from_classyfire(cf)
             peptide_drug_cat = search_drug_cat(elem)
 
+            calc_props = extract_calculated_properties(elem)
+
             def write_token(qname: str, qnorm: str, kind: str) -> None:
                 writer.writerow([
                     drug_id,
@@ -511,7 +574,6 @@ def stream_drugbank(xml_path: Path, out_csv: Path) -> None:
                     aa_sequence_str,
                     aa_len if aa_len is not None else "",
 
-                    # NEW FIELDS
                     approval_groups_str,
                     is_approved,
                     indications_str,
@@ -524,6 +586,11 @@ def stream_drugbank(xml_path: Path, out_csv: Path) -> None:
                     "|".join(cf.get("substituents", [])),
                     "1" if peptide_like_cf else "0",
                     "1" if peptide_drug_cat else "0",
+
+                    calc_props["smiles"],
+                    calc_props["inchi"],
+                    calc_props["logp"],
+                    calc_props["molecular_weight"],
                 ])
 
             # canonical
