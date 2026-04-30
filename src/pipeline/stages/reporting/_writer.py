@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
+from typing import Optional
 
 import numpy as np
 
 from ...models import (
     AttributeTable,
+    CandidateOutcomeRecord,
     CandidateTable,
     OutcomeTable,
     ReportOutput,
@@ -643,3 +646,287 @@ def write_data_xlsx(export_data: dict, output_path: str) -> None:
 
     xlsx_path = os.path.join(output_path, "heatmap_data.xlsx")
     wb.save(xlsx_path)
+
+
+# ---------------------------------------------------------------------------
+# Analytical-snapshot outputs (Parquet + JSON manifest).
+#
+# Sibling of the CSV writers above, but typed for downstream analytical
+# tooling: list-valued fields stay as `list[str]`, dates stay as `date`,
+# bools stay as bool. The CSV writers keep their pipe-joined / ISO-string
+# layout for human review and the existing HTML report.
+# ---------------------------------------------------------------------------
+
+
+def _split_pipe_joined(value: Optional[str]) -> list[str]:
+    """Split a `" | "`-joined string into a list, preserving empties as `[]`.
+
+    `Candidate.opentargets_moa` and `Candidate.opentargets_action_type`
+    are stored as pipe-joined strings inside the OT enrichment but each
+    represents one concept holding multiple values. The Parquet snapshot
+    rehydrates them into native lists so downstream consumers can
+    `.explode()` / `.len()` uniformly across all enrichment columns.
+    """
+    if not value:
+        return []
+    return [part.strip() for part in value.split("|") if part.strip()]
+
+
+def _adjudication_lookup(
+    candidate, cache,
+) -> tuple[Optional[CandidateOutcomeRecord], Optional[CandidateOutcomeRecord]]:
+    """Return (llm_direct, fda_timeline) records from the shared cache.
+
+    Mirrors `_candidate_summary._lookup_cached_outcomes` so the snapshot
+    surfaces both methods side-by-side. Either side may be `None` when
+    that adjudicator hasn't been run against this candidate's
+    drug/indication/phase.
+    """
+    if cache is None:
+        return None, None
+    from ...knowledge_cache import KnowledgeCache
+    key = KnowledgeCache.make_adjudication_key(
+        candidate.drug_name,
+        candidate.indication,
+        candidate.highest_phase.value,
+    )
+    return cache.get_outcome(key, candidate.candidate_id), cache.get_fda_outcome(
+        key, candidate.candidate_id
+    )
+
+
+def _record_columns(record: Optional[CandidateOutcomeRecord]) -> dict:
+    """Flatten a CandidateOutcomeRecord into snapshot columns (or empty defaults)."""
+    if record is None:
+        return {
+            "outcome": None,
+            "confidence": None,
+            "reasoning": None,
+            "evidence_sources": [],
+            "approval_date": None,
+            "commercialization_date": None,
+        }
+    return {
+        "outcome": record.outcome.value,
+        "confidence": record.confidence,
+        "reasoning": record.reasoning,
+        "evidence_sources": list(record.evidence_sources),
+        "approval_date": record.approval_date,
+        "commercialization_date": record.commercialization_date,
+    }
+
+
+def write_candidate_parquet(
+    candidate_table: CandidateTable,
+    attribute_table: AttributeTable,
+    outcome_table: OutcomeTable,
+    output_path: str,
+    *,
+    cache=None,
+    adjudication_method: str = "fda_timeline",
+) -> None:
+    """Write `candidate_detail.parquet` — analytical snapshot, native types.
+
+    One row per candidate. List columns (drug_targets, opentargets_*,
+    trial_ids, sponsors, mesh_*, evidence_sources) are stored as native
+    `list[str]`. Dates as `date`. Both adjudicator outcomes
+    (`llm_direct_*`, `fda_timeline_*`) are surfaced when present in the
+    KnowledgeCache; the active-method record from `outcome_table`
+    overrides the cache for its own column block.
+    """
+    import pandas as pd
+
+    rows: list[dict] = []
+    for c in candidate_table.candidates:
+        attrs = attribute_table.attributes.get(c.candidate_id)
+        active = outcome_table.outcomes.get(c.candidate_id)
+        llm_cached, fda_cached = _adjudication_lookup(c, cache)
+
+        # Active-run record wins for its own method's column block; the
+        # other method falls back to whatever the cache has (or None).
+        if adjudication_method == "llm_direct" and active is not None:
+            llm_record, fda_record = active, fda_cached
+        elif adjudication_method == "fda_timeline" and active is not None:
+            llm_record, fda_record = llm_cached, active
+        else:
+            llm_record, fda_record = llm_cached, fda_cached
+
+        llm_cols = _record_columns(llm_record)
+        fda_cols = _record_columns(fda_record)
+        if llm_cols["outcome"] is None or fda_cols["outcome"] is None:
+            outcomes_agree: bool | None = None
+        else:
+            outcomes_agree = llm_cols["outcome"] == fda_cols["outcome"]
+
+        active_cols = _record_columns(active)
+
+        rows.append({
+            # Identity / clustering
+            "candidate_id": c.candidate_id,
+            "drug_name": c.drug_name,
+            "drug_name_raw": c.drug_name_raw,
+            "indication": c.indication,
+            "highest_phase": c.highest_phase.value,
+            "trial_count": len(c.trial_ids),
+            "trial_ids": list(c.trial_ids),
+            "sponsors": list(c.sponsors),
+            "earliest_start_date": c.earliest_start_date,
+            "latest_completion_date": c.latest_completion_date,
+            # Cross-references
+            "drugbank_id": c.drugbank_id,
+            "mesh_drug": c.mesh_drug,
+            "mesh_indication": c.mesh_indication,
+            "mesh_condition_tree_numbers": list(c.mesh_condition_tree_numbers),
+            # SMILES / ChEMBL
+            "smiles": c.smiles,
+            "drug_targets": list(c.drug_targets),
+            "target_names": list(c.target_names),
+            # ICD-10
+            "icd10_code": c.icd10_code,
+            "icd10_description": c.icd10_description,
+            # OpenTargets
+            "opentargets_moa": _split_pipe_joined(c.opentargets_moa),
+            "opentargets_action_type": _split_pipe_joined(c.opentargets_action_type),
+            "opentargets_targets": list(c.opentargets_targets),
+            "opentargets_pathways": list(c.opentargets_pathways),
+            "opentargets_indication_max_phase": c.opentargets_indication_max_phase,
+            # Classification
+            "modality": attrs.drug_modality if attrs else None,
+            "disease_area": attrs.disease_area if attrs else None,
+            "modality_confidence": attrs.modality_confidence if attrs else None,
+            "disease_confidence": attrs.disease_confidence if attrs else None,
+            "modality_reasoning": attrs.reasoning if attrs else None,
+            # Active-run outcome
+            "outcome": active_cols["outcome"],
+            "outcome_confidence": active_cols["confidence"],
+            "outcome_reasoning": active_cols["reasoning"],
+            "outcome_evidence_sources": active_cols["evidence_sources"],
+            "approval_date": active_cols["approval_date"],
+            "commercialization_date": active_cols["commercialization_date"],
+            # llm_direct adjudicator
+            "llm_direct_outcome": llm_cols["outcome"],
+            "llm_direct_confidence": llm_cols["confidence"],
+            "llm_direct_reasoning": llm_cols["reasoning"],
+            "llm_direct_evidence_sources": llm_cols["evidence_sources"],
+            "llm_direct_approval_date": llm_cols["approval_date"],
+            "llm_direct_commercialization_date": llm_cols["commercialization_date"],
+            # fda_timeline adjudicator
+            "fda_timeline_outcome": fda_cols["outcome"],
+            "fda_timeline_confidence": fda_cols["confidence"],
+            "fda_timeline_reasoning": fda_cols["reasoning"],
+            "fda_timeline_evidence_sources": fda_cols["evidence_sources"],
+            "fda_timeline_approval_date": fda_cols["approval_date"],
+            "fda_timeline_commercialization_date": fda_cols["commercialization_date"],
+            "outcomes_agree": outcomes_agree,
+        })
+
+    df = pd.DataFrame(rows)
+    parquet_path = os.path.join(output_path, "candidate_detail.parquet")
+    df.to_parquet(parquet_path, index=False)
+
+
+def write_trial_parquet(
+    candidate_table: CandidateTable,
+    attribute_table: AttributeTable,
+    outcome_table: OutcomeTable,
+    trial_table: TrialTable | None,
+    output_path: str,
+) -> None:
+    """Write `trial_detail.parquet` — same scope as trial_detail.csv, native types."""
+    import pandas as pd
+
+    if trial_table is None:
+        return
+
+    trial_index = {t.nct_id: t for t in trial_table.trials}
+
+    rows: list[dict] = []
+    for c in candidate_table.candidates:
+        attrs = attribute_table.attributes.get(c.candidate_id)
+        out = outcome_table.outcomes.get(c.candidate_id)
+
+        cand_cols = {
+            "candidate_id": c.candidate_id,
+            "candidate_drug": c.drug_name,
+            "candidate_drug_raw": c.drug_name_raw,
+            "candidate_indication": c.indication,
+            "candidate_modality": attrs.drug_modality if attrs else None,
+            "candidate_disease_area": attrs.disease_area if attrs else None,
+            "candidate_outcome": out.outcome.value if out else None,
+            "candidate_highest_phase": c.highest_phase.value,
+            "candidate_drugbank_id": c.drugbank_id,
+            "candidate_mesh_drug": c.mesh_drug,
+            "candidate_mesh_indication": c.mesh_indication,
+        }
+
+        if not c.trial_ids:
+            rows.append({
+                **cand_cols,
+                "nct_id": None,
+                "trial_intervention": None,
+                "trial_indication": None,
+                "trial_phase": None,
+                "trial_status": None,
+                "trial_mesh_intervention_terms": [],
+                "trial_mesh_condition_terms": [],
+                "trial_mesh_condition_tree_numbers": [],
+                "trial_start_date": None,
+                "trial_completion_date": None,
+                "trial_is_single_arm": None,
+                "trial_sponsor": None,
+                "trial_title": None,
+            })
+            continue
+
+        for nct in c.trial_ids:
+            t = trial_index.get(nct)
+            if t is None:
+                rows.append({
+                    **cand_cols,
+                    "nct_id": nct,
+                    "trial_intervention": None,
+                    "trial_indication": None,
+                    "trial_phase": None,
+                    "trial_status": None,
+                    "trial_mesh_intervention_terms": [],
+                    "trial_mesh_condition_terms": [],
+                    "trial_mesh_condition_tree_numbers": [],
+                    "trial_start_date": None,
+                    "trial_completion_date": None,
+                    "trial_is_single_arm": None,
+                    "trial_sponsor": None,
+                    "trial_title": None,
+                })
+                continue
+
+            rows.append({
+                **cand_cols,
+                "nct_id": t.nct_id,
+                "trial_intervention": t.intervention,
+                "trial_indication": t.indication,
+                "trial_phase": t.phase.value,
+                "trial_status": t.status.value,
+                "trial_mesh_intervention_terms": list(t.mesh_intervention_terms),
+                "trial_mesh_condition_terms": list(t.mesh_condition_terms),
+                "trial_mesh_condition_tree_numbers": list(t.mesh_condition_tree_numbers),
+                "trial_start_date": t.start_date,
+                "trial_completion_date": t.completion_date,
+                "trial_is_single_arm": bool(t.is_single_arm),
+                "trial_sponsor": t.sponsor,
+                "trial_title": t.title,
+            })
+
+    df = pd.DataFrame(rows)
+    parquet_path = os.path.join(output_path, "trial_detail.parquet")
+    df.to_parquet(parquet_path, index=False)
+
+
+def write_run_manifest(output_path: str, payload: dict) -> None:
+    """Write `run_manifest.json` — pipeline config + snapshot versions for the run.
+
+    Pure I/O. The orchestrator is responsible for assembling `payload`
+    (timestamp, git SHA, config, snapshot versions, row counts).
+    """
+    manifest_path = os.path.join(output_path, "run_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)

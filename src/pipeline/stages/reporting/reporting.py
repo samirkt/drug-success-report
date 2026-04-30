@@ -20,7 +20,14 @@ from ...models import (
 from . import _compute, _narrative
 from ._composer import ReportComposer
 from ._types import ReportContext
-from ._writer import write_candidate_detail, write_report, write_trial_detail
+from ._writer import (
+    write_candidate_detail,
+    write_candidate_parquet,
+    write_report,
+    write_run_manifest,
+    write_trial_detail,
+    write_trial_parquet,
+)
 
 
 class ReportingStage:
@@ -42,6 +49,7 @@ class ReportingStage:
         back_propagate_approval: bool = True,
         cache=None,
         adjudication_method: str = "fda_timeline",
+        manifest_payload: dict | None = None,
     ):
         self.output_path = output_path
         self.formats = formats or ["html"]
@@ -52,6 +60,7 @@ class ReportingStage:
         self.back_propagate_approval = back_propagate_approval
         self.cache = cache
         self.adjudication_method = adjudication_method
+        self.manifest_payload = manifest_payload
 
     def run(
         self,
@@ -146,5 +155,29 @@ class ReportingStage:
                 outcome_table=outcome_table,
                 output_path=self.output_path,
             )
+            write_candidate_parquet(
+                candidate_table=candidate_table,
+                attribute_table=attribute_table,
+                outcome_table=outcome_table,
+                output_path=self.output_path,
+                cache=self.cache,
+                adjudication_method=self.adjudication_method,
+            )
+            write_trial_parquet(
+                candidate_table=candidate_table,
+                attribute_table=attribute_table,
+                outcome_table=outcome_table,
+                trial_table=trial_table,
+                output_path=self.output_path,
+            )
+            if self.manifest_payload is not None:
+                payload = dict(self.manifest_payload)
+                payload["row_counts"] = {
+                    "n_candidates": len(candidate_table.candidates),
+                    "n_trials": len(trial_table.trials) if trial_table else 0,
+                    "n_attributes": len(attribute_table.attributes),
+                    "n_outcomes": len(outcome_table.outcomes),
+                }
+                write_run_manifest(self.output_path, payload)
 
         return report

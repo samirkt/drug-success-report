@@ -13,8 +13,10 @@ Builds and executes the full research pipeline:
 import concurrent.futures
 import logging
 import random
-from dataclasses import dataclass, field
-from datetime import date
+import sqlite3
+import subprocess
+from dataclasses import dataclass, field, fields, is_dataclass
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -227,6 +229,110 @@ class PipelineResult:
     funnel_results: FunnelResults | None = None
     report: ReportOutput | None = None
     cost_ledger: CostLedger | None = None
+
+
+# ---------------------------------------------------------------------------
+# Run-manifest helpers (used by Pipeline._build_manifest_payload to assemble
+# `run_manifest.json` alongside the snapshot Parquet outputs).
+# ---------------------------------------------------------------------------
+
+# PipelineConfig fields excluded from the manifest. These are transient
+# infra paths or secrets that have no bearing on output reproducibility.
+_MANIFEST_CONFIG_EXCLUDE: frozenset[str] = frozenset({
+    "cache_path",
+    "ct_cache_path",
+    "fda_cache_dir",
+    "openfda_api_key",
+    "fda_llm_api_key",
+})
+
+
+def _safe_git_sha() -> str | None:
+    """Best-effort `git rev-parse HEAD`. Returns None on any failure."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=5, check=False,
+        )
+        if out.returncode != 0:
+            return None
+        return out.stdout.decode("utf-8", "replace").strip() or None
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def _safe_git_dirty() -> bool | None:
+    """Best-effort working-tree dirty check via `git status --porcelain`."""
+    try:
+        out = subprocess.run(
+            ["git", "status", "--porcelain"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=5, check=False,
+        )
+        if out.returncode != 0:
+            return None
+        return bool(out.stdout.strip())
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def _read_user_version(path: Path | str | None) -> int | None:
+    """Read `PRAGMA user_version` from a SQLite snapshot. None on any failure."""
+    if path is None:
+        return None
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+        try:
+            row = conn.execute("PRAGMA user_version").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    version = int(row[0])
+    return version or None  # 0 means unstamped
+
+
+def _file_mtime_iso(path: Path | str | None) -> str | None:
+    """ISO-8601 mtime for a file (UTC). None when path is None or missing."""
+    if path is None:
+        return None
+    p = Path(path)
+    if not p.exists():
+        return None
+    return datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+
+
+def _to_jsonable(value):
+    """Recursively coerce dataclass / Path / date values into JSON-serializable form."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, (list, tuple)):
+        return [_to_jsonable(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable(v) for k, v in value.items()}
+    if is_dataclass(value):
+        return {f.name: _to_jsonable(getattr(value, f.name)) for f in fields(value)}
+    return str(value)
+
+
+def _serialize_config(cfg) -> dict:
+    """Project a PipelineConfig dataclass to a JSON-safe dict for the manifest."""
+    out: dict = {}
+    for f in fields(cfg):
+        if f.name in _MANIFEST_CONFIG_EXCLUDE:
+            continue
+        out[f.name] = _to_jsonable(getattr(cfg, f.name))
+    return out
 
 
 class Pipeline:
@@ -549,7 +655,28 @@ class Pipeline:
                 back_propagate_approval=cfg.back_propagate_approval,
                 cache=cache,
                 adjudication_method=cfg.adjudication_method,
+                manifest_payload=self._build_manifest_payload(),
             ),
+        }
+
+    def _build_manifest_payload(self) -> dict:
+        """Snapshot config + external versions + git state for run_manifest.json.
+
+        `row_counts` is filled in by ReportingStage at write time, since
+        post-filter table sizes aren't known until the run completes.
+        """
+        cfg = self.config
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "git_sha": _safe_git_sha(),
+            "git_dirty": _safe_git_dirty(),
+            "pipeline_config": _serialize_config(cfg),
+            "snapshot_versions": {
+                "chembl_user_version": _read_user_version(cfg.chembl_snapshot_path),
+                "opentargets_user_version": _read_user_version(cfg.opentargets_snapshot_path),
+                "drugbank_csv_mtime": _file_mtime_iso(cfg.drugbank_csv_path),
+                "drugbank_synonyms_csv_mtime": _file_mtime_iso(cfg.drugbank_synonyms_csv),
+            },
         }
 
     def _build_adjudication_stage(self, cfg: "PipelineConfig", cache):
