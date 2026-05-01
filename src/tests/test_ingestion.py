@@ -437,6 +437,24 @@ class TestNormalize:
         result = stage._normalize(self._aact_row(mesh_condition_terms=None))
         assert result.mesh_condition_terms == []
 
+    def test_normalize_maps_eligibility_criteria(self):
+        stage = TrialIngestionStage()
+        result = stage._normalize(self._aact_row(
+            eligibility_criteria="Inclusion: adults 18+. Exclusion: pregnancy."
+        ))
+        assert result.eligibility_criteria == "Inclusion: adults 18+. Exclusion: pregnancy."
+
+    def test_normalize_maps_why_stopped(self):
+        stage = TrialIngestionStage()
+        result = stage._normalize(self._aact_row(why_stopped="Sponsor decision"))
+        assert result.why_stopped == "Sponsor decision"
+
+    def test_normalize_eligibility_criteria_defaults_to_none(self):
+        stage = TrialIngestionStage()
+        result = stage._normalize(self._aact_row())
+        assert result.eligibility_criteria is None
+        assert result.why_stopped is None
+
 
 # ---------------------------------------------------------------------------
 # _parse_phase  (PASS NOW — implemented)

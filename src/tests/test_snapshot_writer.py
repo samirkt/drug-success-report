@@ -77,7 +77,6 @@ def _enriched_candidate(**overrides) -> Candidate:
         smiles="CC(=O)O",
         drug_targets=["P12345", "Q67890"],
         target_names=["Target A", "Target B"],
-        icd10_code="E11",
         icd10_description="Type 2 diabetes mellitus",
         opentargets_moa="Inhibits X | Activates Y",
         opentargets_action_type="INHIBITOR | AGONIST",
@@ -536,3 +535,120 @@ class TestSmilesStandardization:
         lines = contents.strip().splitlines()
         assert len(lines) == 1
         assert lines[0] == "candidate_id,drug_name,status,smiles_raw,smiles_canonical"
+
+
+# ---------------------------------------------------------------------------
+# HINT-prep additions: ICD list on candidate parquet, per-trial refactor
+# ---------------------------------------------------------------------------
+
+class TestCandidateIcdCodes:
+
+    def test_parquet_includes_icd10_codes_list(self, tmp_path):
+        cand = _enriched_candidate(icd10_codes=["E11", "E11.9"])
+        write_candidate_parquet(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "candidate_detail.parquet")
+        assert "icd10_codes" in df.columns
+        assert list(df["icd10_codes"].iloc[0]) == ["E11", "E11.9"]
+
+    def test_parquet_icd10_codes_empty_when_unset(self, tmp_path):
+        cand = _enriched_candidate()
+        write_candidate_parquet(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "candidate_detail.parquet")
+        assert list(df["icd10_codes"].iloc[0]) == []
+
+
+class TestTrialDetailPerTrial:
+
+    def _trial(self, **overrides) -> RawTrial:
+        base = dict(
+            nct_id="NCT00000001",
+            title="A Phase 2 study",
+            intervention="DrugA",
+            indication="T2D",
+            sponsor="PharmaCo",
+            phase=TrialPhase.PHASE_2,
+            status=TrialStatus.COMPLETED,
+            start_date=date(2020, 1, 1),
+            completion_date=date(2022, 6, 30),
+            eligibility_criteria="Inclusion: adults 18-65...",
+            why_stopped=None,
+        )
+        base.update(overrides)
+        return RawTrial(**base)
+
+    def test_parquet_one_row_per_nct_with_new_columns(self, tmp_path):
+        trial = self._trial()
+        cand = _enriched_candidate(trial_ids=["NCT00000001"])
+        outcome = CandidateOutcomeRecord(
+            candidate_id=cand.candidate_id,
+            outcome=CandidateOutcome.APPROVED,
+        )
+        write_trial_parquet(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(outcomes={cand.candidate_id: outcome}),
+            TrialTable(trials=[trial]),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "trial_detail.parquet")
+        assert len(df) == 1
+        row = df.iloc[0]
+        assert row["nct_id"] == "NCT00000001"
+        assert row["trial_eligibility_criteria"] == "Inclusion: adults 18-65..."
+        assert row["trial_why_stopped"] is None
+        # APPROVED candidate + COMPLETED Phase 2 trial -> label 1
+        assert row["trial_inferred_label"] == 1
+        assert list(row["also_in_candidate_ids"]) == []
+
+    def test_parquet_dedupes_when_same_nct_in_two_candidates(self, tmp_path):
+        trial = self._trial(nct_id="NCT12345")
+        c1 = _enriched_candidate(candidate_id="c1", trial_ids=["NCT12345"])
+        c2 = _enriched_candidate(candidate_id="c2", trial_ids=["NCT12345"])
+        write_trial_parquet(
+            CandidateTable(candidates=[c1, c2]),
+            AttributeTable(),
+            OutcomeTable(),
+            TrialTable(trials=[trial]),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "trial_detail.parquet")
+        assert len(df) == 1
+        row = df.iloc[0]
+        assert row["candidate_id"] == "c1"
+        assert list(row["also_in_candidate_ids"]) == ["c2"]
+
+    def test_csv_one_row_per_nct_with_new_columns(self, tmp_path):
+        from pipeline.stages.reporting._writer import write_trial_detail
+
+        trial = self._trial(why_stopped="Sponsor decision")
+        # Two trial_ids on the candidate but only one matches the trial table
+        cand = _enriched_candidate(trial_ids=["NCT00000001", "NCT00000003"])
+        outcome = CandidateOutcomeRecord(
+            candidate_id=cand.candidate_id,
+            outcome=CandidateOutcome.FAILED_PHASE_2,
+        )
+        write_trial_detail(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(outcomes={cand.candidate_id: outcome}),
+            TrialTable(trials=[trial]),
+            str(tmp_path),
+        )
+        df = pd.read_csv(tmp_path / "trial_detail.csv", keep_default_na=False)
+        # Two unique nct_ids -> two rows; one matched, one placeholder.
+        assert list(df["nct_id"]) == ["NCT00000001", "NCT00000003"]
+        matched = df[df["nct_id"] == "NCT00000001"].iloc[0]
+        assert matched["trial_eligibility_criteria"] == "Inclusion: adults 18-65..."
+        assert matched["trial_why_stopped"] == "Sponsor decision"
+        # FAILED_PHASE_2 + COMPLETED Phase 2 -> label 0
+        assert matched["trial_inferred_label"] == "0"

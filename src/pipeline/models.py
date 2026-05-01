@@ -85,6 +85,8 @@ class RawTrial:
     mesh_condition_terms: list[str] = field(default_factory=list)
     mesh_condition_tree_numbers: list[str] = field(default_factory=list)
     mesh_intervention_terms: list[str] = field(default_factory=list)
+    eligibility_criteria: Optional[str] = None
+    why_stopped: Optional[str] = None
 
 
 @dataclass
@@ -125,8 +127,8 @@ class Candidate:
     smiles_standardization_status: Optional[str] = None  # ok | failed_parse | failed_standardize | empty
     drug_targets: list[str] = field(default_factory=list)   # UniProt accessions
     target_names: list[str] = field(default_factory=list)   # ChEMBL pref_names
-    icd10_code: Optional[str] = None
     icd10_description: Optional[str] = None
+    icd10_codes: list[str] = field(default_factory=list)  # full NLM lookup
     # OpenTargets — kept in its own namespace so the ChEMBL-derived
     # `drug_targets`/`target_names` (UniProt + ChEMBL pref_name) do not
     # collide with OT's gene-symbol + Ensembl identifiers. `opentargets_*`

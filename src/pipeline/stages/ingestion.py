@@ -112,8 +112,10 @@ SELECT
     s.brief_title,
     s.phase,
     s.overall_status,
+    s.why_stopped,
     s.start_date,
     s.completion_date,
+    e.criteria    AS eligibility_criteria,
     i.name        AS intervention,
     c.name        AS indication,
     (
@@ -160,6 +162,7 @@ FROM       studies       s
 JOIN       interventions i ON i.nct_id = s.nct_id
                            AND upper(i.intervention_type) = 'DRUG'
 JOIN       conditions    c ON c.nct_id = s.nct_id
+LEFT JOIN  eligibilities e ON e.nct_id = s.nct_id
 WHERE upper(s.study_type) = 'INTERVENTIONAL'
 """
 
@@ -587,6 +590,8 @@ class TrialIngestionStage:
             mesh_intervention_terms=list(raw.get("mesh_intervention_terms") or []),
             mesh_condition_terms=list(raw.get("mesh_condition_terms") or []),
             mesh_condition_tree_numbers=list(raw.get("mesh_condition_tree_numbers") or []),
+            eligibility_criteria=raw.get("eligibility_criteria") or None,
+            why_stopped=raw.get("why_stopped") or None,
         )
 
     def _parse_phase(self, phase_str: str) -> TrialPhase:

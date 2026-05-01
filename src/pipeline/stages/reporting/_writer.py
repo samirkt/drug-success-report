@@ -14,6 +14,7 @@ from ...models import (
     CandidateOutcomeRecord,
     CandidateTable,
     OutcomeTable,
+    RawTrial,
     ReportOutput,
     TrialTable,
 )
@@ -102,8 +103,8 @@ def write_candidate_detail(
         "smiles_standardization_status",
         "drug_targets",
         "target_names",
-        "icd10_code",
         "icd10_description",
+        "icd10_codes",
         "opentargets_moa",
         "opentargets_action_type",
         "opentargets_targets",
@@ -159,8 +160,8 @@ def write_candidate_detail(
                 "smiles_standardization_status": c.smiles_standardization_status or "",
                 "drug_targets": "|".join(c.drug_targets),
                 "target_names": "|".join(c.target_names),
-                "icd10_code": c.icd10_code or "",
                 "icd10_description": c.icd10_description or "",
+                "icd10_codes": "|".join(c.icd10_codes),
                 "opentargets_moa": c.opentargets_moa or "",
                 "opentargets_action_type": c.opentargets_action_type or "",
                 "opentargets_targets": "|".join(c.opentargets_targets),
@@ -198,24 +199,27 @@ def write_trial_detail(
     trial_table: TrialTable | None,
     output_path: str,
 ) -> None:
-    """Write a (candidate × trial) CSV for debugging classification and clustering.
+    """Write one CSV row per trial (NCT) for debugging clustering.
 
-    One row per constituent trial. Each row shows both the candidate-level
-    canonical drug/indication and classification tags and the trial-level
-    raw AACT intervention/indication strings plus MeSH terms, so that a
-    reader can vet whether the clustering merged the right trials and whether
-    the modality/disease-area classification is consistent with the trial
-    evidence.
+    Each row carries the trial-level AACT data (phase, status,
+    eligibility criteria, MeSH terms, why-stopped) joined to its primary
+    candidate's canonical drug/indication and classification tags. When
+    a single NCT is referenced by more than one candidate (rare M×N
+    artifact from ingestion), the first-encountered candidate is the
+    primary and the rest land in ``also_in_candidate_ids``.
     """
     import csv
 
     if trial_table is None:
         return
 
-    trial_index = {t.nct_id: t for t in trial_table.trials}
+    trial_index = _build_trial_index(trial_table)
+    nct_order, nct_to_candidates = _build_nct_to_candidates(candidate_table)
 
     headers = [
+        "nct_id",
         "candidate_id",
+        "also_in_candidate_ids",
         "candidate_drug",
         "candidate_drug_raw",
         "candidate_indication",
@@ -226,11 +230,11 @@ def write_trial_detail(
         "candidate_drugbank_id",
         "candidate_mesh_drug",
         "candidate_mesh_indication",
-        "nct_id",
-        "trial_intervention",
-        "trial_indication",
         "trial_phase",
         "trial_status",
+        "trial_why_stopped",
+        "trial_eligibility_criteria",
+        "trial_inferred_label",
         "trial_mesh_intervention_terms",
         "trial_mesh_condition_terms",
         "trial_mesh_condition_tree_numbers",
@@ -246,55 +250,95 @@ def write_trial_detail(
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
 
-        for c in candidate_table.candidates:
-            attrs = attribute_table.attributes.get(c.candidate_id)
-            out = outcome_table.outcomes.get(c.candidate_id)
+        for nct in nct_order:
+            cands = nct_to_candidates[nct]
+            primary = cands[0]
+            also_in = [c.candidate_id for c in cands[1:]]
+            attrs = attribute_table.attributes.get(primary.candidate_id)
+            out = outcome_table.outcomes.get(primary.candidate_id)
+            t = trial_index.get(nct)
 
-            cand_cols = {
-                "candidate_id": c.candidate_id,
-                "candidate_drug": c.drug_name,
-                "candidate_drug_raw": c.drug_name_raw,
-                "candidate_indication": c.indication,
+            row = {
+                "nct_id": nct,
+                "candidate_id": primary.candidate_id,
+                "also_in_candidate_ids": "|".join(also_in),
+                "candidate_drug": primary.drug_name,
+                "candidate_drug_raw": primary.drug_name_raw,
+                "candidate_indication": primary.indication,
                 "candidate_modality": attrs.drug_modality if attrs else "",
                 "candidate_disease_area": attrs.disease_area if attrs else "",
                 "candidate_outcome": out.outcome.value if out else "",
-                "candidate_highest_phase": c.highest_phase.value,
-                "candidate_drugbank_id": c.drugbank_id or "",
-                "candidate_mesh_drug": c.mesh_drug or "",
-                "candidate_mesh_indication": c.mesh_indication or "",
+                "candidate_highest_phase": primary.highest_phase.value,
+                "candidate_drugbank_id": primary.drugbank_id or "",
+                "candidate_mesh_drug": primary.mesh_drug or "",
+                "candidate_mesh_indication": primary.mesh_indication or "",
             }
-
-            if not c.trial_ids:
-                writer.writerow({**cand_cols, **{h: "" for h in headers if h not in cand_cols}})
+            if t is None:
+                row.update({h: "" for h in headers if h not in row})
+                writer.writerow(row)
                 continue
 
-            for nct in c.trial_ids:
-                t = trial_index.get(nct)
-                if t is None:
-                    writer.writerow({
-                        **cand_cols,
-                        "nct_id": nct,
-                        **{h: "" for h in headers
-                           if h not in cand_cols and h != "nct_id"},
-                    })
-                    continue
+            label = _infer_label_safe(out, t)
+            row.update({
+                "trial_phase": t.phase.value,
+                "trial_status": t.status.value,
+                "trial_why_stopped": t.why_stopped or "",
+                "trial_eligibility_criteria": t.eligibility_criteria or "",
+                "trial_inferred_label": "" if label is None else str(label),
+                "trial_mesh_intervention_terms": "|".join(t.mesh_intervention_terms),
+                "trial_mesh_condition_terms": "|".join(t.mesh_condition_terms),
+                "trial_mesh_condition_tree_numbers": "|".join(t.mesh_condition_tree_numbers),
+                "trial_start_date": t.start_date.isoformat() if t.start_date else "",
+                "trial_completion_date": t.completion_date.isoformat() if t.completion_date else "",
+                "trial_is_single_arm": "true" if t.is_single_arm else "false",
+                "trial_sponsor": t.sponsor,
+                "trial_title": t.title,
+            })
+            writer.writerow(row)
 
-                writer.writerow({
-                    **cand_cols,
-                    "nct_id": t.nct_id,
-                    "trial_intervention": t.intervention,
-                    "trial_indication": t.indication,
-                    "trial_phase": t.phase.value,
-                    "trial_status": t.status.value,
-                    "trial_mesh_intervention_terms": "|".join(t.mesh_intervention_terms),
-                    "trial_mesh_condition_terms": "|".join(t.mesh_condition_terms),
-                    "trial_mesh_condition_tree_numbers": "|".join(t.mesh_condition_tree_numbers),
-                    "trial_start_date": t.start_date.isoformat() if t.start_date else "",
-                    "trial_completion_date": t.completion_date.isoformat() if t.completion_date else "",
-                    "trial_is_single_arm": "true" if t.is_single_arm else "false",
-                    "trial_sponsor": t.sponsor,
-                    "trial_title": t.title,
-                })
+
+def _build_trial_index(trial_table: TrialTable) -> dict[str, RawTrial]:
+    """Map nct_id -> first RawTrial. Trial-intrinsic fields (phase,
+    status, criteria, why_stopped, dates, sponsor, title, MeSH) are
+    identical across the M×N rows that ingestion produces for the same
+    NCT, so first-wins is safe.
+    """
+    index: dict[str, RawTrial] = {}
+    for t in trial_table.trials:
+        index.setdefault(t.nct_id, t)
+    return index
+
+
+def _build_nct_to_candidates(
+    candidate_table: CandidateTable,
+) -> tuple[list[str], dict[str, list]]:
+    """Build nct_id -> [candidates] in candidate-encounter order. Returns
+    (ordered_nct_list, mapping). The first candidate that mentions a
+    given nct_id is the primary."""
+    order: list[str] = []
+    mapping: dict[str, list] = {}
+    for c in candidate_table.candidates:
+        for nct in c.trial_ids:
+            if nct not in mapping:
+                mapping[nct] = [c]
+                order.append(nct)
+            else:
+                mapping[nct].append(c)
+    return order, mapping
+
+
+def _infer_label_safe(outcome_record, trial) -> int | None:
+    """Wrap :func:`infer_trial_label` so the writer can stay agnostic to
+    whether an outcome record exists for the candidate."""
+    if outcome_record is None or trial is None:
+        return None
+    from ...trial_labels import infer_trial_label
+
+    return infer_trial_label(
+        candidate_outcome=outcome_record.outcome,
+        trial_phase=trial.phase,
+        trial_status=trial.status,
+    )
 
 
 def write_html(
@@ -788,8 +832,8 @@ def write_candidate_parquet(
             "drug_targets": list(c.drug_targets),
             "target_names": list(c.target_names),
             # ICD-10
-            "icd10_code": c.icd10_code,
             "icd10_description": c.icd10_description,
+            "icd10_codes": list(c.icd10_codes),
             # OpenTargets
             "opentargets_moa": _split_pipe_joined(c.opentargets_moa),
             "opentargets_action_type": _split_pipe_joined(c.opentargets_action_type),
@@ -838,41 +882,54 @@ def write_trial_parquet(
     trial_table: TrialTable | None,
     output_path: str,
 ) -> None:
-    """Write `trial_detail.parquet` — same scope as trial_detail.csv, native types."""
+    """Write `trial_detail.parquet` — one row per NCT, native types.
+
+    Trial-intrinsic fields (phase, status, criteria, why_stopped, dates,
+    sponsor, title, MeSH) come from the matching :class:`RawTrial`. The
+    candidate-level columns reflect the *primary* candidate that owns
+    this trial; if the same NCT was clustered into more than one
+    candidate, the rest land in ``also_in_candidate_ids``.
+    """
     import pandas as pd
 
     if trial_table is None:
         return
 
-    trial_index = {t.nct_id: t for t in trial_table.trials}
+    trial_index = _build_trial_index(trial_table)
+    nct_order, nct_to_candidates = _build_nct_to_candidates(candidate_table)
 
     rows: list[dict] = []
-    for c in candidate_table.candidates:
-        attrs = attribute_table.attributes.get(c.candidate_id)
-        out = outcome_table.outcomes.get(c.candidate_id)
+    for nct in nct_order:
+        cands = nct_to_candidates[nct]
+        primary = cands[0]
+        also_in = [c.candidate_id for c in cands[1:]]
+        attrs = attribute_table.attributes.get(primary.candidate_id)
+        out = outcome_table.outcomes.get(primary.candidate_id)
+        t = trial_index.get(nct)
 
         cand_cols = {
-            "candidate_id": c.candidate_id,
-            "candidate_drug": c.drug_name,
-            "candidate_drug_raw": c.drug_name_raw,
-            "candidate_indication": c.indication,
+            "nct_id": nct,
+            "candidate_id": primary.candidate_id,
+            "also_in_candidate_ids": also_in,
+            "candidate_drug": primary.drug_name,
+            "candidate_drug_raw": primary.drug_name_raw,
+            "candidate_indication": primary.indication,
             "candidate_modality": attrs.drug_modality if attrs else None,
             "candidate_disease_area": attrs.disease_area if attrs else None,
             "candidate_outcome": out.outcome.value if out else None,
-            "candidate_highest_phase": c.highest_phase.value,
-            "candidate_drugbank_id": c.drugbank_id,
-            "candidate_mesh_drug": c.mesh_drug,
-            "candidate_mesh_indication": c.mesh_indication,
+            "candidate_highest_phase": primary.highest_phase.value,
+            "candidate_drugbank_id": primary.drugbank_id,
+            "candidate_mesh_drug": primary.mesh_drug,
+            "candidate_mesh_indication": primary.mesh_indication,
         }
-
-        if not c.trial_ids:
+        if t is None:
             rows.append({
                 **cand_cols,
-                "nct_id": None,
-                "trial_intervention": None,
-                "trial_indication": None,
                 "trial_phase": None,
                 "trial_status": None,
+                "trial_why_stopped": None,
+                "trial_eligibility_criteria": None,
+                "trial_inferred_label": None,
                 "trial_mesh_intervention_terms": [],
                 "trial_mesh_condition_terms": [],
                 "trial_mesh_condition_tree_numbers": [],
@@ -884,43 +941,22 @@ def write_trial_parquet(
             })
             continue
 
-        for nct in c.trial_ids:
-            t = trial_index.get(nct)
-            if t is None:
-                rows.append({
-                    **cand_cols,
-                    "nct_id": nct,
-                    "trial_intervention": None,
-                    "trial_indication": None,
-                    "trial_phase": None,
-                    "trial_status": None,
-                    "trial_mesh_intervention_terms": [],
-                    "trial_mesh_condition_terms": [],
-                    "trial_mesh_condition_tree_numbers": [],
-                    "trial_start_date": None,
-                    "trial_completion_date": None,
-                    "trial_is_single_arm": None,
-                    "trial_sponsor": None,
-                    "trial_title": None,
-                })
-                continue
-
-            rows.append({
-                **cand_cols,
-                "nct_id": t.nct_id,
-                "trial_intervention": t.intervention,
-                "trial_indication": t.indication,
-                "trial_phase": t.phase.value,
-                "trial_status": t.status.value,
-                "trial_mesh_intervention_terms": list(t.mesh_intervention_terms),
-                "trial_mesh_condition_terms": list(t.mesh_condition_terms),
-                "trial_mesh_condition_tree_numbers": list(t.mesh_condition_tree_numbers),
-                "trial_start_date": t.start_date,
-                "trial_completion_date": t.completion_date,
-                "trial_is_single_arm": bool(t.is_single_arm),
-                "trial_sponsor": t.sponsor,
-                "trial_title": t.title,
-            })
+        rows.append({
+            **cand_cols,
+            "trial_phase": t.phase.value,
+            "trial_status": t.status.value,
+            "trial_why_stopped": t.why_stopped,
+            "trial_eligibility_criteria": t.eligibility_criteria,
+            "trial_inferred_label": _infer_label_safe(out, t),
+            "trial_mesh_intervention_terms": list(t.mesh_intervention_terms),
+            "trial_mesh_condition_terms": list(t.mesh_condition_terms),
+            "trial_mesh_condition_tree_numbers": list(t.mesh_condition_tree_numbers),
+            "trial_start_date": t.start_date,
+            "trial_completion_date": t.completion_date,
+            "trial_is_single_arm": bool(t.is_single_arm),
+            "trial_sponsor": t.sponsor,
+            "trial_title": t.title,
+        })
 
     df = pd.DataFrame(rows)
     parquet_path = os.path.join(output_path, "trial_detail.parquet")

@@ -289,8 +289,11 @@ def parse_args() -> argparse.Namespace:
         "--enable-icd10",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Attach ICD-10-CM codes via the NLM Clinical Tables API. "
-             "Enabled by default. Cached in the knowledge cache.",
+        help="Map each candidate's indication text to ICD-10-CM codes "
+             "via the NLM Clinical Tables API. Disabled by default — it "
+             "makes a network call per unique indication. Lookups are "
+             "cached on disk under <output>/cache/icd_lookup.sqlite so "
+             "re-runs are free. Required for the HINT export.",
     )
     parser.add_argument(
         "--chembl-snapshot",

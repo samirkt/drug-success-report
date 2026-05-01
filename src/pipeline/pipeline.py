@@ -150,7 +150,13 @@ class PipelineConfig:
     # KnowledgeCache key derived from those fields remains stable.
     enable_smiles: bool = True
     enable_targets: bool = True
-    enable_icd10: bool = True
+    # ICD-10-CM enrichment: maps each candidate's `indication` text to a
+    # list of ICD-10-CM codes via the NLM Clinical Tables API. Default
+    # off — it makes a network call per unique indication and is only
+    # useful when prepping data for HINT or other ICD-10-keyed downstream
+    # models. Lookups are cached on disk under
+    # `<output>/cache/icd_lookup.sqlite` so re-runs are free.
+    enable_icd10: bool = False
     # DrugBank carries `canonical-smiles` only for small molecules, so
     # biologics (peptides, antibodies, approved protein drugs) come back
     # empty. When True, a follow-on stage fills `Candidate.smiles` from
@@ -773,6 +779,7 @@ class Pipeline:
         """
         from .enrichment import (
             ChemblSmilesEnrichment,
+            IcdEnrichment,
             OpenTargetsEnrichment,
             SmilesEnrichment,
             SmilesStandardizationEnrichment,
@@ -792,6 +799,9 @@ class Pipeline:
             # Canonicalization runs last so DrugBank + ChEMBL have both
             # had a chance to populate `Candidate.smiles`.
             stages.append(SmilesStandardizationEnrichment())
-        # ICD-10 (step 3) gets registered here as it lands in a subsequent
-        # step of the plan.
+        if self.config.enable_icd10:
+            cache_path = None
+            if self.config.report_output_path:
+                cache_path = Path(self.config.report_output_path) / "cache" / "icd_lookup.sqlite"
+            stages.append(IcdEnrichment(cache_path=cache_path))
         return stages
