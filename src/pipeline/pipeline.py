@@ -156,7 +156,7 @@ class PipelineConfig:
     # useful when prepping data for HINT or other ICD-10-keyed downstream
     # models. Lookups are cached on disk under
     # `<output>/cache/icd_lookup.sqlite` so re-runs are free.
-    enable_icd10: bool = False
+    enable_icd10: bool = True
     # DrugBank carries `canonical-smiles` only for small molecules, so
     # biologics (peptides, antibodies, approved protein drugs) come back
     # empty. When True, a follow-on stage fills `Candidate.smiles` from
