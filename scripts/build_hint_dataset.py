@@ -14,12 +14,38 @@ Rows are dropped when:
     - icd10_codes is null/empty  (HINT's GRAM encoder is ICD-keyed)
     - trial_eligibility_criteria is null/empty  (one of HINT's three encoders)
 
+HINT trains a separate model per phase. Use ``--phase {1,2,3}`` to
+emit a phase-specific dataset; ``--phase all`` (default) keeps every
+phase mixed (useful for inspection, not for training a per-phase model).
+
+Label semantics (computed during the pipeline run as
+``trial_inferred_label``):
+
+    - status TERMINATED/WITHDRAWN/SUSPENDED      -> 0
+    - candidate APPROVED/COMMERCIALIZED          -> 1
+    - candidate FAILED_PHASE_N:
+        * trial.phase  < N                       -> 1  (drug advanced past)
+        * trial.phase == N                       -> 0  (drug stopped here)
+        * trial.phase  > N                       -> dropped
+    - candidate ONGOING/UNKNOWN                  -> dropped
+
+So for ``--phase 2``: a Phase 2 trial with FAILED_PHASE_2 is a 0;
+with APPROVED or FAILED_PHASE_3 is a 1. Same shape HINT expects.
+
 Usage:
 
+    # Per-phase HINT datasets
     uv run python scripts/build_hint_dataset.py \\
         --candidates docs/candidate_detail.parquet \\
         --trials     docs/trial_detail.parquet \\
-        --output     docs/features/hint_dataset.csv
+        --phase      2 \\
+        --output     docs/features/hint_phase2.csv
+
+    # Mixed-phase dataset (inspection only)
+    uv run python scripts/build_hint_dataset.py \\
+        --candidates docs/candidate_detail.parquet \\
+        --trials     docs/trial_detail.parquet \\
+        --output     docs/features/hint_all_phases.csv
 """
 
 from __future__ import annotations
@@ -44,6 +70,14 @@ HINT_COLUMNS = [
     "criteria",    # 9
 ]
 
+# Map "1"/"2"/"3"/"4" to the canonical phase string used in trial_detail.parquet.
+_PHASE_FILTER = {
+    "1": "Phase 1",
+    "2": "Phase 2",
+    "3": "Phase 3",
+    "4": "Phase 4",
+}
+
 
 def _is_nonempty_list(value) -> bool:
     """True iff `value` is a list-like with at least one truthy entry."""
@@ -60,6 +94,7 @@ def build(
     candidates_parquet: Path,
     trials_parquet: Path,
     output_csv: Path,
+    phase: str = "all",
 ) -> int:
     try:
         import pandas as pd
@@ -100,6 +135,13 @@ def build(
     )
     raw_n = len(df)
     logger.info("raw joined rows: %d", raw_n)
+
+    if phase != "all":
+        target = _PHASE_FILTER.get(phase)
+        if target is None:
+            raise SystemExit(f"--phase {phase!r} not recognized. Use 1, 2, 3, 4, or all.")
+        df = df[df["trial_phase"] == target]
+        logger.info("after --phase %s filter (%s only): %d", phase, target, len(df))
 
     df = df[df["smiles_canonical"].notna() & (df["smiles_canonical"].astype(str).str.len() > 0)]
     logger.info("after non-null smiles_canonical: %d", len(df))
@@ -146,10 +188,21 @@ def main(argv: list[str] | None = None) -> int:
                         help="Path to trial_detail.parquet from the same run.")
     parser.add_argument("--output", type=Path, required=True,
                         help="Where to write the HINT-shaped CSV.")
+    parser.add_argument(
+        "--phase",
+        choices=["1", "2", "3", "4", "all"],
+        default="all",
+        help=(
+            "HINT trains separate models per phase. Pass 1/2/3 to emit "
+            "a phase-specific dataset (only trials whose trial_phase "
+            "matches that phase). Default 'all' keeps every phase "
+            "mixed (useful for inspection; not what you train on)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
-        build(args.candidates, args.trials, args.output)
+        build(args.candidates, args.trials, args.output, phase=args.phase)
     except SystemExit:
         raise
     except Exception as exc:
