@@ -44,9 +44,9 @@ class TestIsAvailable:
 
 class TestRun:
 
-    @patch("pipeline.enrichment.icd.get_icd_cached")
+    @patch("pipeline.enrichment.icd.get_icd_from_nih")
     def test_populates_codes_per_unique_indication(self, mock_lookup):
-        mock_lookup.side_effect = lambda name, cache, timeout: {
+        mock_lookup.side_effect = lambda name, timeout: {
             "Type 2 Diabetes": ["E11", "E11.9"],
             "Influenza": ["J10", "J11"],
         }.get(name)
@@ -65,7 +65,7 @@ class TestRun:
         assert mock_lookup.call_count == 2
         assert ("icd10", 3, 4) in ledger.coverage_calls
 
-    @patch("pipeline.enrichment.icd.get_icd_cached")
+    @patch("pipeline.enrichment.icd.get_icd_from_nih")
     def test_lookup_failure_is_logged_and_skipped(self, mock_lookup):
         mock_lookup.side_effect = RuntimeError("network down")
         cands = _candidates()
@@ -73,3 +73,43 @@ class TestRun:
         IcdEnrichment().run(cands, ledger=ledger)
         assert all(c.icd10_codes == [] for c in cands.candidates)
         assert ("icd10", 0, 4) in ledger.coverage_calls
+
+    @patch("pipeline.enrichment.icd.get_icd_from_nih")
+    def test_cache_hits_skip_network(self, mock_lookup, tmp_path):
+        # Pre-populate cache with one positive and one negative entry.
+        from pipeline.icd_lookup import IcdCache
+        cache_path = tmp_path / "icd.sqlite"
+        cache = IcdCache(cache_path)
+        cache.put("Type 2 Diabetes", ["E11"])
+        cache.put("Influenza", None)  # cached negative
+
+        mock_lookup.side_effect = AssertionError(
+            "should not be called when both indications are cached"
+        )
+
+        cands = _candidates()
+        ledger = _FakeLedger()
+        IcdEnrichment(cache_path=cache_path).run(cands, ledger=ledger)
+
+        # Positive cache hit populated; negative cache hit stayed empty.
+        assert cands.candidates[0].icd10_codes == ["E11"]
+        assert cands.candidates[2].icd10_codes == []
+        assert mock_lookup.call_count == 0
+        assert ("icd10", 2, 4) in ledger.coverage_calls
+
+    @patch("pipeline.enrichment.icd.get_icd_from_nih")
+    def test_successful_fetch_writes_to_cache(self, mock_lookup, tmp_path):
+        mock_lookup.side_effect = lambda name, timeout: {
+            "Type 2 Diabetes": ["E11"],
+        }.get(name)
+
+        from pipeline.icd_lookup import IcdCache
+        cache_path = tmp_path / "icd.sqlite"
+        cands = _candidates()
+        IcdEnrichment(cache_path=cache_path).run(cands, ledger=_FakeLedger())
+
+        # Re-open the cache and check both positive (Type 2 Diabetes) and
+        # negative (Influenza, returned None) results were written back.
+        cache = IcdCache(cache_path)
+        assert cache.get("Type 2 Diabetes") == (True, ["E11"])
+        assert cache.get("Influenza") == (True, None)
