@@ -258,6 +258,17 @@ def parse_args() -> argparse.Namespace:
              "default.",
     )
     parser.add_argument(
+        "--enable-smiles-standardization",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Canonicalize SMILES via the chembl_structure_pipeline "
+             "standardizer (strips salts, normalizes tautomers) into a new "
+             "smiles_canonical column. Raw smiles is preserved. Per-candidate "
+             "outcome lands in smiles_standardization_log.csv. Enabled by "
+             "default; skipped silently when rdkit / chembl_structure_pipeline "
+             "are not installed.",
+    )
+    parser.add_argument(
         "--enable-opentargets",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -364,6 +375,8 @@ def main() -> None:
            if args.enable_targets is not None else {}),
         **({"enable_chembl_smiles": args.enable_chembl_smiles}
            if args.enable_chembl_smiles is not None else {}),
+        **({"enable_smiles_standardization": args.enable_smiles_standardization}
+           if args.enable_smiles_standardization is not None else {}),
         **({"enable_opentargets": args.enable_opentargets}
            if args.enable_opentargets is not None else {}),
         **({"enable_icd10": args.enable_icd10}

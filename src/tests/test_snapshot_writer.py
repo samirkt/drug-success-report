@@ -44,6 +44,7 @@ from pipeline.pipeline import (
 from pipeline.stages.reporting._writer import (
     write_candidate_parquet,
     write_run_manifest,
+    write_smiles_standardization_log,
     write_trial_parquet,
 )
 
@@ -418,6 +419,11 @@ class TestRunManifest:
         assert _file_mtime_iso(None) is None
         assert _file_mtime_iso(tmp_path / "missing.csv") is None
 
+    def test_serialize_config_includes_standardization_flag(self, tmp_path):
+        cfg = PipelineConfig(enable_smiles_standardization=False)
+        serialized = _serialize_config(cfg)
+        assert serialized["enable_smiles_standardization"] is False
+
     def test_serialize_config_excludes_secrets_and_paths(self, tmp_path):
         cfg = PipelineConfig(
             cache_path="should_be_excluded.db",
@@ -439,3 +445,94 @@ class TestRunManifest:
         assert isinstance(serialized["chembl_snapshot_path"], str)
         # Round-trips through json.dumps without error
         json.dumps(serialized)
+
+
+# ---------------------------------------------------------------------------
+# SMILES standardization — parquet columns + sidecar log
+# ---------------------------------------------------------------------------
+
+class TestSmilesStandardization:
+
+    def test_parquet_includes_smiles_canonical_columns(self, tmp_path):
+        cand = _enriched_candidate(
+            smiles="Cl.CCN",
+            smiles_canonical="CCN",
+            smiles_standardization_status="ok",
+        )
+        write_candidate_parquet(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "candidate_detail.parquet")
+        assert "smiles_canonical" in df.columns
+        assert "smiles_standardization_status" in df.columns
+        # Raw and canonical both populated, side-by-side.
+        assert df["smiles"].iloc[0] == "Cl.CCN"
+        assert df["smiles_canonical"].iloc[0] == "CCN"
+        assert df["smiles_standardization_status"].iloc[0] == "ok"
+
+    def test_parquet_smiles_canonical_null_when_not_run(self, tmp_path):
+        cand = _enriched_candidate()  # status defaults to None
+        write_candidate_parquet(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "candidate_detail.parquet")
+        assert df["smiles_canonical"].iloc[0] is None
+        assert df["smiles_standardization_status"].iloc[0] is None
+
+    def test_log_written_with_per_status_rows(self, tmp_path):
+        cands = [
+            _enriched_candidate(
+                candidate_id="c_ok", drug_name="Ok",
+                smiles="CC(=O)O", smiles_canonical="CC(=O)O",
+                smiles_standardization_status="ok",
+            ),
+            _enriched_candidate(
+                candidate_id="c_empty", drug_name="Empty",
+                smiles=None, smiles_canonical=None,
+                smiles_standardization_status="empty",
+            ),
+            _enriched_candidate(
+                candidate_id="c_fail", drug_name="Fail",
+                smiles="garbage", smiles_canonical=None,
+                smiles_standardization_status="failed_parse",
+            ),
+            # Status None — never standardized; should NOT appear in the log.
+            _enriched_candidate(candidate_id="c_skipped", drug_name="Skipped"),
+        ]
+        write_smiles_standardization_log(
+            CandidateTable(candidates=cands),
+            str(tmp_path),
+        )
+        df = pd.read_csv(tmp_path / "smiles_standardization_log.csv", keep_default_na=False)
+        ids = list(df["candidate_id"])
+        assert ids == ["c_ok", "c_empty", "c_fail"]  # c_skipped excluded
+        ok_row = df.iloc[0]
+        assert ok_row["status"] == "ok"
+        assert ok_row["smiles_raw"] == "CC(=O)O"
+        assert ok_row["smiles_canonical"] == "CC(=O)O"
+        empty_row = df.iloc[1]
+        assert empty_row["status"] == "empty"
+        assert empty_row["smiles_raw"] == ""
+        assert empty_row["smiles_canonical"] == ""
+        fail_row = df.iloc[2]
+        assert fail_row["status"] == "failed_parse"
+        assert fail_row["smiles_raw"] == "garbage"
+        assert fail_row["smiles_canonical"] == ""
+
+    def test_log_writes_header_only_when_no_candidates_standardized(self, tmp_path):
+        cands = [_enriched_candidate(candidate_id="c1")]  # status None
+        write_smiles_standardization_log(
+            CandidateTable(candidates=cands),
+            str(tmp_path),
+        )
+        # File exists with header only; no data rows.
+        contents = (tmp_path / "smiles_standardization_log.csv").read_text()
+        lines = contents.strip().splitlines()
+        assert len(lines) == 1
+        assert lines[0] == "candidate_id,drug_name,status,smiles_raw,smiles_canonical"

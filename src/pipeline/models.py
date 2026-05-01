@@ -121,6 +121,8 @@ class Candidate:
     mesh_condition_tree_numbers: list[str] = field(default_factory=list)
     single_arm_p_values: list[TrialPValue] = field(default_factory=list)
     smiles: Optional[str] = None
+    smiles_canonical: Optional[str] = None
+    smiles_standardization_status: Optional[str] = None  # ok | failed_parse | failed_standardize | empty
     drug_targets: list[str] = field(default_factory=list)   # UniProt accessions
     target_names: list[str] = field(default_factory=list)   # ChEMBL pref_names
     icd10_code: Optional[str] = None

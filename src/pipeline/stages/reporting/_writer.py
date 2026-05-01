@@ -98,6 +98,8 @@ def write_candidate_detail(
         "single_arm_p_values_count",
         # Enrichment fields (schema v2+)
         "smiles",
+        "smiles_canonical",
+        "smiles_standardization_status",
         "drug_targets",
         "target_names",
         "icd10_code",
@@ -153,6 +155,8 @@ def write_candidate_detail(
                 "mesh_condition_tree_numbers": "|".join(c.mesh_condition_tree_numbers),
                 "single_arm_p_values_count": len(c.single_arm_p_values),
                 "smiles": c.smiles or "",
+                "smiles_canonical": c.smiles_canonical or "",
+                "smiles_standardization_status": c.smiles_standardization_status or "",
                 "drug_targets": "|".join(c.drug_targets),
                 "target_names": "|".join(c.target_names),
                 "icd10_code": c.icd10_code or "",
@@ -779,6 +783,8 @@ def write_candidate_parquet(
             "mesh_condition_tree_numbers": list(c.mesh_condition_tree_numbers),
             # SMILES / ChEMBL
             "smiles": c.smiles,
+            "smiles_canonical": c.smiles_canonical,
+            "smiles_standardization_status": c.smiles_standardization_status,
             "drug_targets": list(c.drug_targets),
             "target_names": list(c.target_names),
             # ICD-10
@@ -930,3 +936,43 @@ def write_run_manifest(output_path: str, payload: dict) -> None:
     manifest_path = os.path.join(output_path, "run_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, default=str)
+
+
+def write_smiles_standardization_log(
+    candidate_table: CandidateTable,
+    output_path: str,
+) -> None:
+    """Write `smiles_standardization_log.csv` — one row per candidate the
+    standardization enrichment touched.
+
+    Skips candidates whose ``smiles_standardization_status`` is None
+    (the enrichment never ran for them, so the file stays empty when
+    standardization is disabled).
+    """
+    import csv
+
+    rows = [
+        c for c in candidate_table.candidates
+        if c.smiles_standardization_status is not None
+    ]
+    csv_path = os.path.join(output_path, "smiles_standardization_log.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "candidate_id",
+                "drug_name",
+                "status",
+                "smiles_raw",
+                "smiles_canonical",
+            ],
+        )
+        writer.writeheader()
+        for c in rows:
+            writer.writerow({
+                "candidate_id": c.candidate_id,
+                "drug_name": c.drug_name,
+                "status": c.smiles_standardization_status or "",
+                "smiles_raw": c.smiles or "",
+                "smiles_canonical": c.smiles_canonical or "",
+            })

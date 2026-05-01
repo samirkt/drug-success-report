@@ -25,6 +25,7 @@ from ._writer import (
     write_candidate_parquet,
     write_report,
     write_run_manifest,
+    write_smiles_standardization_log,
     write_trial_detail,
     write_trial_parquet,
 )
@@ -153,6 +154,10 @@ class ReportingStage:
                 candidate_table=candidate_table,
                 attribute_table=attribute_table,
                 outcome_table=outcome_table,
+                output_path=self.output_path,
+            )
+            write_smiles_standardization_log(
+                candidate_table=candidate_table,
                 output_path=self.output_path,
             )
             write_candidate_parquet(

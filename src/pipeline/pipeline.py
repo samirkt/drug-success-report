@@ -159,6 +159,13 @@ class PipelineConfig:
     # the snapshot to carry the `canonical_smiles` column (rebuild with
     # the latest scripts/build_chembl_targets_snapshot.py).
     enable_chembl_smiles: bool = True
+    # Canonicalize the SMILES strings populated by the DrugBank +
+    # ChEMBL fallback enrichments using the chembl_structure_pipeline
+    # standardizer (strips salts, normalizes tautomers) and writes the
+    # result to `Candidate.smiles_canonical`. Raw `Candidate.smiles` is
+    # left untouched. Lazy-imports rdkit and chembl_structure_pipeline
+    # so missing deps degrade to a one-line skip rather than a hard fail.
+    enable_smiles_standardization: bool = True
     # OpenTargets Platform enrichment: mechanism-of-action text, target
     # approved symbols, Reactome pathways, and per-indication max
     # development phase. Requires `opentargets_snapshot_path` to be set
@@ -419,10 +426,12 @@ class Pipeline:
         if not stages:
             return candidate_table
         logger.info(
-            "Enrichments enabled: smiles=%s, smiles_chembl=%s, targets=%s, "
-            "opentargets=%s, icd10=%s (granularity=%s)",
+            "Enrichments enabled: smiles=%s, smiles_chembl=%s, "
+            "smiles_standardization=%s, targets=%s, opentargets=%s, "
+            "icd10=%s (granularity=%s)",
             self.config.enable_smiles,
             self.config.enable_chembl_smiles,
+            self.config.enable_smiles_standardization,
             self.config.enable_targets,
             self.config.enable_opentargets,
             self.config.enable_icd10,
@@ -766,6 +775,7 @@ class Pipeline:
             ChemblSmilesEnrichment,
             OpenTargetsEnrichment,
             SmilesEnrichment,
+            SmilesStandardizationEnrichment,
             TargetsEnrichment,
         )
 
@@ -778,6 +788,10 @@ class Pipeline:
             stages.append(ChemblSmilesEnrichment())
         if self.config.enable_opentargets:
             stages.append(OpenTargetsEnrichment())
+        if self.config.enable_smiles_standardization:
+            # Canonicalization runs last so DrugBank + ChEMBL have both
+            # had a chance to populate `Candidate.smiles`.
+            stages.append(SmilesStandardizationEnrichment())
         # ICD-10 (step 3) gets registered here as it lands in a subsequent
         # step of the plan.
         return stages
