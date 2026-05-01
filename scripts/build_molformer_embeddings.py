@@ -116,6 +116,23 @@ def build(
 ) -> int:
     try:
         import pandas as pd
+    except ImportError as exc:
+        raise SystemExit(
+            f"Missing dep ({exc.name}). Install with: pip install -e \".[modeling]\""
+        ) from exc
+    # transformers 5.x removed the `transformers.onnx` submodule, but
+    # MolFormer-XL's `trust_remote_code` config imports OnnxConfig from
+    # it. Shim it with an empty base class — we don't ONNX-export, so
+    # the subclass is only used at definition time, never instantiated.
+    import sys as _sys
+    import types as _types
+    if "transformers.onnx" not in _sys.modules:
+        _onnx = _types.ModuleType("transformers.onnx")
+        class _OnnxConfigStub:  # noqa: N801 — match transformers naming
+            pass
+        _onnx.OnnxConfig = _OnnxConfigStub
+        _sys.modules["transformers.onnx"] = _onnx
+    try:
         from transformers import AutoModel, AutoTokenizer
     except ImportError as exc:
         raise SystemExit(
