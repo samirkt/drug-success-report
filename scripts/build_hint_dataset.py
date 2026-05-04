@@ -9,7 +9,7 @@ Python lists and stringified, since HINT stores those columns as
 ``str(list[str])`` (ast.literal_eval at load time).
 
 Rows are dropped when:
-    - smiles_canonical is null  (HINT's MPNN needs a parseable SMILES)
+    - the configured SMILES column is null  (HINT's MPNN needs a parseable SMILES)
     - trial_inferred_label is null  (no training signal)
     - icd10_codes is null/empty  (HINT's GRAM encoder is ICD-keyed)
     - trial_eligibility_criteria is null/empty  (one of HINT's three encoders)
@@ -56,6 +56,8 @@ import sys
 from pathlib import Path
 
 logger = logging.getLogger("build_hint_dataset")
+
+SMILES_COLUMN = "smiles"
 
 HINT_COLUMNS = [
     "nctid",       # 0
@@ -109,7 +111,7 @@ def build(
     candidates = pd.read_parquet(candidates_parquet)
     trials = pd.read_parquet(trials_parquet)
 
-    cand_cols_needed = ["candidate_id", "drug_name", "smiles_canonical", "icd10_codes", "indication"]
+    cand_cols_needed = ["candidate_id", "drug_name", SMILES_COLUMN, "icd10_codes", "indication"]
     missing = [c for c in cand_cols_needed if c not in candidates.columns]
     if missing:
         raise SystemExit(
@@ -128,7 +130,7 @@ def build(
         )
 
     df = trials.merge(
-        candidates[["candidate_id", "drug_name", "smiles_canonical", "icd10_codes", "indication"]],
+        candidates[["candidate_id", "drug_name", SMILES_COLUMN, "icd10_codes", "indication"]],
         on="candidate_id",
         how="left",
         suffixes=("", "_cand"),
@@ -143,8 +145,8 @@ def build(
         df = df[df["trial_phase"] == target]
         logger.info("after --phase %s filter (%s only): %d", phase, target, len(df))
 
-    df = df[df["smiles_canonical"].notna() & (df["smiles_canonical"].astype(str).str.len() > 0)]
-    logger.info("after non-null smiles_canonical: %d", len(df))
+    df = df[df[SMILES_COLUMN].notna() & (df[SMILES_COLUMN].astype(str).str.len() > 0)]
+    logger.info("after non-null %s: %d", SMILES_COLUMN, len(df))
 
     df = df[df["trial_inferred_label"].notna()]
     logger.info("after non-null inferred_label: %d", len(df))
@@ -164,7 +166,7 @@ def build(
         "diseases": df["indication"].apply(lambda x: str([x] if x else [])),
         "icdcodes": df["icd10_codes"].apply(lambda x: str(list(x))),
         "drugs":    df["drug_name"].apply(lambda x: str([x] if x else [])),
-        "smiless":  df["smiles_canonical"].apply(lambda x: str([x])),
+        "smiless":  df[SMILES_COLUMN].apply(lambda x: str([x])),
         "criteria": df["trial_eligibility_criteria"].astype(str),
     })
 
