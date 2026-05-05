@@ -1,7 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-knowledge_cache.db
 pipeline.log
 .pytest_cache/
 
