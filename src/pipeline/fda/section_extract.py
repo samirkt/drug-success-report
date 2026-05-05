@@ -48,11 +48,22 @@ _LETTER_TAIL = re.compile(
     re.IGNORECASE,
 )
 
-# SPL "Limitations of Use" subsection header. The label prompt explicitly
-# tells the LLM to ignore limitations, so dropping this content removes a
-# common source of model drift and saves tokens.
-_LIMITATIONS_OF_USE = re.compile(
-    r"\b(Limitations? of Use|Limitations? of Usage)\b",
+# SPL section headers that appear AFTER the indications-and-usage clause.
+# Truncating at the first such header drops dosing, contraindications,
+# warnings, and limitations boilerplate — none of which the extract LLM
+# should consider, all of which inflate prompt tokens. The extract prompt
+# already says to ignore limitations, but stripping at the input layer is
+# more robust than relying on the model and saves tokens regardless.
+_LABEL_TAIL = re.compile(
+    r"\b("
+    r"Limitations? of Use|Limitations? of Usage"
+    r"|Important Limitations"
+    r"|Dosage and Administration"
+    r"|Dosage Forms? and Strengths?"
+    r"|Contraindications"
+    r"|Warnings? and Precautions"
+    r"|Adverse Reactions"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -60,8 +71,8 @@ _LIMITATIONS_OF_USE = re.compile(
 def extract_letter_indication_clause(
     text: str,
     *,
-    window_chars: int = 1500,
-    max_total_chars: int = 6000,
+    window_chars: int = 500,
+    max_total_chars: int = 2500,
     min_input_chars: int = 4000,
 ) -> str:
     """Heuristically narrow approval-letter text to the indication clause.
@@ -128,7 +139,7 @@ def narrow_label_indications(text: str) -> str:
     if not text:
         return text
 
-    match = _LIMITATIONS_OF_USE.search(text)
+    match = _LABEL_TAIL.search(text)
     if not match:
         return text
 

@@ -128,3 +128,49 @@ class TestLabelNarrowing:
         out = narrow_label_indications(text)
         assert "migraine prevention" in out
         assert "acute migraine treatment" not in out
+
+    @pytest.mark.parametrize(
+        "tail_header",
+        [
+            "Dosage and Administration",
+            "Dosage Forms and Strengths",
+            "Contraindications",
+            "Warnings and Precautions",
+            "Adverse Reactions",
+            "Important Limitations",
+        ],
+    )
+    def test_strips_downstream_spl_section_headers(self, tail_header):
+        # Inputs from the openFDA `indications_and_usage` field sometimes
+        # spill into the next SPL section. Strip at the earliest header so
+        # the LLM doesn't waste tokens reasoning over dosing / safety text.
+        text = (
+            "DRUGX is indicated for the treatment of plaque psoriasis "
+            "in adults.\n"
+            f"{tail_header}\n"
+            "Some boilerplate that should be dropped before reaching the LLM.\n"
+        )
+        out = narrow_label_indications(text)
+        assert "plaque psoriasis" in out
+        assert tail_header not in out
+        assert "boilerplate" not in out
+
+    def test_earliest_tail_header_wins(self):
+        # When multiple downstream headers appear, truncation happens at
+        # the first one — preserving as much of the indications block as
+        # possible while still dropping all downstream sections.
+        # Indication clause is >50 chars so the conservative fallback
+        # (return original when remaining text is too short) doesn't bite.
+        text = (
+            "DRUGX is indicated for the treatment of stage 2 essential "
+            "hypertension in adults and adolescents 12 years and older.\n"
+            "Dosage and Administration\n"
+            "Take one tablet daily.\n"
+            "Contraindications\n"
+            "Hypersensitivity to active ingredient.\n"
+        )
+        out = narrow_label_indications(text)
+        assert "hypertension" in out
+        assert "Dosage and Administration" not in out
+        assert "Contraindications" not in out
+        assert "tablet daily" not in out
