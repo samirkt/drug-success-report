@@ -31,9 +31,12 @@ once for all unique drugs across the candidate table.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Protocol
+
+from rapidfuzz import fuzz
 
 from .drugbank_norm import canonicalize_drug_name, load_drugbank_synonyms
 from .models import Candidate
@@ -124,6 +127,141 @@ def resolve_drug_key(candidate: Candidate) -> str:
     if candidate.drugbank_id:
         return candidate.drugbank_id
     return canonicalize_drug_name(candidate.drug_name) or candidate.drug_name.lower()
+
+
+_TRAILING_PUNCT = re.compile(r"[\s.,;:!?…]+$")
+_LEADING_PUNCT = re.compile(r"^[\s.,;:!?]+")
+_WHITESPACE = re.compile(r"\s+")
+# Matches SPL section references like "( 1 )", "( 1.1 )", "(1.2)", "(14.1.2)".
+_SECTION_MARKER = re.compile(r"\(\s*\d+(?:\.\d+)*\s*\)")
+# Sentence boundary: end-of-sentence punctuation followed by whitespace
+# and a capital letter.
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
+
+def _normalize_indication(text: str) -> str:
+    """Conservative normalization for dedup: lowercase, collapse
+    whitespace, strip leading/trailing punctuation. Does NOT collapse
+    semantically distinct indications (e.g. adult vs pediatric variants).
+    """
+    s = text.lower()
+    s = _WHITESPACE.sub(" ", s).strip()
+    s = _LEADING_PUNCT.sub("", s)
+    s = _TRAILING_PUNCT.sub("", s)
+    return s
+
+
+def split_long_indications(
+    indications: list[str], *, max_chars: int = 1500, min_chars: int = 30
+) -> list[str]:
+    """Split overlong label indication strings into smaller chunks.
+
+    Many SPLs concatenate the entire INDICATIONS AND USAGE section into
+    a single entry (e.g. Keytruda's two indications are 23k chars each,
+    each containing 30+ distinct clinical indications separated by SPL
+    section markers like "( 1.1 )"). Sending those whole defeats both
+    the rapidfuzz pre-filter (one giant chunk swamps the rank) and the
+    LLM context budget.
+
+    Strategy:
+      1. Entries shorter than ``max_chars`` pass through unchanged.
+      2. For longer entries, split on SPL section markers (``( N.N )``).
+         If that yields multiple reasonable chunks, return them.
+      3. Otherwise, fall back to sentence-level splitting, aggregating
+         sentences into chunks no larger than ``max_chars``.
+    """
+    out: list[str] = []
+    for ind in indications:
+        if len(ind) <= max_chars:
+            out.append(ind)
+            continue
+        # Pass 1: split on SPL section markers. Always do this first to
+        # preserve the natural clinical-indication boundaries.
+        sections = [c.strip() for c in _SECTION_MARKER.split(ind)]
+        sections = [c for c in sections if len(c) >= min_chars]
+        if not sections:
+            sections = [ind]
+        # Pass 2: any section still too long gets sentence-aggregated
+        # into chunks <= max_chars.
+        for sec in sections:
+            if len(sec) <= max_chars:
+                out.append(sec)
+                continue
+            sentences = _SENTENCE_BOUNDARY.split(sec)
+            buf = ""
+            for s in sentences:
+                s = s.strip()
+                if not s:
+                    continue
+                if buf and len(buf) + 1 + len(s) > max_chars:
+                    if len(buf) >= min_chars:
+                        out.append(buf)
+                    buf = s
+                else:
+                    buf = (buf + " " + s).strip() if buf else s
+            if buf and len(buf) >= min_chars:
+                out.append(buf)
+    return out
+
+
+def dedup_indications(indications: list[str]) -> list[str]:
+    """Drop label indications that are exact-after-normalization duplicates
+    of an earlier entry. Order is preserved; the first occurrence wins.
+
+    The bulk SQLite lookup already dedups by raw string match, but FDA
+    labels frequently carry the same indication with minor whitespace /
+    punctuation / casing variation across SPL versions. This pass
+    catches those without merging legitimately distinct indications.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for ind in indications:
+        norm = _normalize_indication(ind)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        out.append(ind)
+    return out
+
+
+def top_relevant_indications(
+    trial_indication: str,
+    mesh_indication: Optional[str],
+    label_indications: list[str],
+    *,
+    k: int = 20,
+) -> list[str]:
+    """Rank label indications by string similarity to the trial indication
+    and return the top-K. Order within the returned list reflects rank
+    (highest similarity first).
+
+    Necessary for OTC drugs like aspirin where the local FDA mirror
+    holds 1000+ near-duplicate indications across manufacturer SPLs;
+    sending all of them to the LLM blows the context window and stalls
+    inference. For drugs with <=K indications, returns them unchanged
+    (in original order).
+
+    Uses ``rapidfuzz.fuzz.token_set_ratio`` (insensitive to word order
+    and duplicates) against both the trial indication and the MeSH
+    indication; takes the max of the two scores per label entry.
+    """
+    if len(label_indications) <= k:
+        return list(label_indications)
+
+    trial_norm = _normalize_indication(trial_indication)
+    mesh_norm = _normalize_indication(mesh_indication) if mesh_indication else ""
+
+    scored: list[tuple[float, int, str]] = []
+    for idx, ind in enumerate(label_indications):
+        ind_norm = _normalize_indication(ind)
+        score = fuzz.token_set_ratio(trial_norm, ind_norm)
+        if mesh_norm:
+            score = max(score, fuzz.token_set_ratio(mesh_norm, ind_norm))
+        # Negate for descending sort while keeping idx for stable ordering
+        scored.append((-score, idx, ind))
+
+    scored.sort()
+    return [ind for _, _, ind in scored[:k]]
 
 
 def synonyms_for_candidate(
@@ -241,8 +379,19 @@ class NDCAdjudicator:
         prompt rule "do not reason from training data" can't be
         accidentally exercised against an empty list).
         """
+        split = split_long_indications(label_indications)
+        deduped = dedup_indications(split)
+        relevant = top_relevant_indications(
+            trial_indication, mesh_indication, deduped, k=20
+        )
+        if len(relevant) < len(deduped) or len(split) > len(label_indications):
+            logger.debug(
+                "Pre-LLM filter for %r: %d raw -> %d split -> %d deduped -> %d sent",
+                matched_synonym,
+                len(label_indications), len(split), len(deduped), len(relevant),
+            )
         numbered = "\n".join(
-            f"{i}. {ind}" for i, ind in enumerate(label_indications, start=1)
+            f"{i}. {ind}" for i, ind in enumerate(relevant, start=1)
         )
         user = _USER_TEMPLATE.format(
             trial_indication=trial_indication,

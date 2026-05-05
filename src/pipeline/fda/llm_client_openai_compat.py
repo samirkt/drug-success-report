@@ -47,6 +47,7 @@ class OpenAICompatJSONClient:
         model: str,
         api_key: Optional[str] = None,
         timeout: float = 120.0,
+        max_tokens: int = 256,
         client: Any = None,
         cache: Any = None,  # pipeline.knowledge_cache.KnowledgeCache | None
         ledger: Any = None,  # utils.tiered_router.CostLedger | None
@@ -56,6 +57,10 @@ class OpenAICompatJSONClient:
         self.model = model
         self.api_key = api_key or None
         self.timeout = timeout
+        # Cap output tokens — local 7B/14B models will happily generate
+        # 500+ tokens of reasoning otherwise, dominating per-call latency.
+        # 256 is plenty for a 1-3 sentence reasoning + the JSON wrapper.
+        self.max_tokens = max_tokens
         self.cache = cache
         self.ledger = ledger
         self.stage_label = stage_label
@@ -108,6 +113,7 @@ class OpenAICompatJSONClient:
             ],
             "response_format": {"type": "json_object"},
             "temperature": 0,
+            "max_tokens": self.max_tokens,
         }
 
         try:

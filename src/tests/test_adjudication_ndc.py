@@ -20,8 +20,11 @@ from pipeline.models import (
 from pipeline.ndc import (
     NDCAdjudicator,
     NDCVerdict,
+    dedup_indications,
     resolve_drug_key,
+    split_long_indications,
     synonyms_for_candidate,
+    top_relevant_indications,
 )
 from pipeline.stages import adjudication_ndc as ndc_stage
 from pipeline.stages.adjudication_ndc import (
@@ -397,6 +400,97 @@ class TestResolveDrugKey:
         cand = _candidate(drug="Pembrolizumab (Keytruda)", drugbank_id=None)
         # canonicalize_drug_name strips parentheticals
         assert resolve_drug_key(cand) == "pembrolizumab"
+
+
+class TestDedupIndications:
+    def test_drops_exact_duplicates_after_normalization(self):
+        indications = [
+            "Treatment of metastatic NSCLC",
+            "treatment of metastatic NSCLC",  # case variant
+            "Treatment of metastatic NSCLC.",  # trailing period
+            "  Treatment of metastatic NSCLC  ",  # whitespace
+        ]
+        out = dedup_indications(indications)
+        assert out == ["Treatment of metastatic NSCLC"]
+
+    def test_preserves_distinct_population_variants(self):
+        indications = [
+            "Treatment of X in adults",
+            "Treatment of X in pediatric patients",
+        ]
+        assert dedup_indications(indications) == indications
+
+    def test_preserves_order_first_occurrence_wins(self):
+        indications = ["Indication A", "Indication B", "indication a"]
+        assert dedup_indications(indications) == ["Indication A", "Indication B"]
+
+    def test_drops_empty_strings(self):
+        assert dedup_indications(["", "  ", "Real indication"]) == ["Real indication"]
+
+
+class TestSplitLongIndications:
+    def test_short_indications_pass_through(self):
+        inds = ["Treatment of X", "Treatment of Y"]
+        assert split_long_indications(inds, max_chars=1500) == inds
+
+    def test_splits_on_spl_section_markers(self):
+        big = (
+            "Melanoma for the treatment of patients with unresectable melanoma. "
+            "( 1.1 ) Non-Small Cell Lung Cancer in combination with chemotherapy "
+            "as first-line treatment. ( 1.2 ) Head and Neck Squamous Cell "
+            "Carcinoma for first-line treatment of recurrent disease. ( 1.3 )"
+        ) * 5  # force length > max_chars
+        out = split_long_indications([big], max_chars=200)
+        assert len(out) > 1
+        # Each chunk should be a real clinical indication, not a marker
+        assert all("(" not in c[-5:] for c in out)
+        assert any("melanoma" in c.lower() for c in out)
+        assert any("non-small cell lung cancer" in c.lower() for c in out)
+
+    def test_falls_back_to_sentence_split_when_no_markers(self):
+        big = "First indication sentence. " * 100
+        out = split_long_indications([big], max_chars=300)
+        assert len(out) > 1
+        assert all(len(c) <= 300 + 50 for c in out)  # +50 for trailing buffer
+
+    def test_drops_tiny_fragments_below_min_chars(self):
+        # Section markers around very short fragments
+        text = "X. ( 1.1 ) Y. ( 1.2 ) " + "A real long indication sentence. " * 50
+        out = split_long_indications([text], max_chars=500, min_chars=30)
+        # "X." and "Y." should be dropped (below min_chars)
+        assert all(len(c) >= 30 for c in out)
+
+
+class TestTopRelevantIndications:
+    def test_returns_all_when_under_k(self):
+        inds = ["a", "b", "c"]
+        assert top_relevant_indications("anything", None, inds, k=20) == inds
+
+    def test_picks_most_similar_when_over_k(self):
+        inds = [
+            "Treatment of metastatic non-small cell lung cancer",
+            "Treatment of melanoma",
+            "Treatment of head and neck squamous cell carcinoma",
+        ] + [f"Unrelated indication {i}" for i in range(50)]
+        out = top_relevant_indications("metastatic NSCLC", None, inds, k=2)
+        assert len(out) == 2
+        assert "non-small cell lung cancer" in out[0].lower()
+
+    def test_uses_mesh_indication_as_fallback(self):
+        inds = (
+            ["Treatment of melanoma"]
+            + [f"Unrelated {i}" for i in range(30)]
+            + ["Treatment of metastatic non-small cell lung cancer (NSCLC)"]
+        )
+        # Trial indication is generic; MeSH is specific
+        out = top_relevant_indications(
+            "lung cancer",
+            "Carcinoma, Non-Small-Cell Lung",
+            inds,
+            k=2,
+        )
+        joined = " ".join(out).lower()
+        assert "non-small cell lung cancer" in joined
 
 
 class TestStandaloneAdjudicate:
