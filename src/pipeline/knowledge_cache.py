@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS fda_adjudication_cache (
     commercialization_date TEXT,
     created_at           TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ndc_adjudication_cache (
+    cache_key            TEXT PRIMARY KEY,
+    outcome              TEXT NOT NULL,
+    confidence           REAL NOT NULL,
+    reasoning            TEXT NOT NULL,
+    evidence_sources     TEXT NOT NULL,
+    approval_date        TEXT,
+    commercialization_date TEXT,
+    created_at           TEXT NOT NULL
+);
 """
 
 
@@ -275,6 +285,50 @@ class KnowledgeCache:
         self._conn.execute(
             """
             INSERT OR REPLACE INTO fda_adjudication_cache
+                (cache_key, outcome, confidence, reasoning, evidence_sources,
+                 approval_date, commercialization_date, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cache_key,
+                record.outcome.value,
+                record.confidence,
+                record.reasoning,
+                json.dumps(record.evidence_sources),
+                record.approval_date.isoformat() if record.approval_date else None,
+                record.commercialization_date.isoformat() if record.commercialization_date else None,
+                now,
+            ),
+        )
+        self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # NDC-indication adjudication cache (parallel to fda_adjudication_cache
+    # so a candidate summary can compare verdicts from all three methods
+    # when each has been run against the same KnowledgeCache).
+    # ------------------------------------------------------------------
+
+    def get_ndc_outcome(self, cache_key: str, candidate_id: str) -> CandidateOutcomeRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM ndc_adjudication_cache WHERE cache_key = ?", (cache_key,)
+        ).fetchone()
+        if row is None:
+            return None
+        return CandidateOutcomeRecord(
+            candidate_id=candidate_id,
+            outcome=CandidateOutcome(row["outcome"]),
+            confidence=row["confidence"],
+            reasoning=row["reasoning"],
+            evidence_sources=json.loads(row["evidence_sources"]),
+            approval_date=_parse_iso_date(row["approval_date"]),
+            commercialization_date=_parse_iso_date(row["commercialization_date"]),
+        )
+
+    def put_ndc_outcome(self, cache_key: str, record: CandidateOutcomeRecord) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO ndc_adjudication_cache
                 (cache_key, outcome, confidence, reasoning, evidence_sources,
                  approval_date, commercialization_date, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)

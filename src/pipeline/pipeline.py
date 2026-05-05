@@ -34,6 +34,8 @@ from .stages import (
     FDAAdjudicationConfig,
     FDAAdjudicationStage,
     FunnelAggregationStage,
+    NDCAdjudicationConfig,
+    NDCAdjudicationStage,
     OutcomeAdjudicationStage,
     ReportingStage,
     TrialIngestionStage,
@@ -500,6 +502,8 @@ class Pipeline:
             )
             if method == "fda_timeline":
                 return cache.get_fda_outcome(key, cand.candidate_id) is not None
+            if method == "ndc_indication":
+                return cache.get_ndc_outcome(key, cand.candidate_id) is not None
             return cache.get_outcome(key, cand.candidate_id) is not None
 
         kept = [c for c in candidate_table.candidates if _is_cached(c)]
@@ -697,7 +701,7 @@ class Pipeline:
     def _build_adjudication_stage(self, cfg: "PipelineConfig", cache):
         """Construct the configured adjudicator.
 
-        Both branches produce stages conforming to `run(CandidateTable) -> OutcomeTable`
+        All branches produce stages conforming to `run(CandidateTable) -> OutcomeTable`
         so downstream aggregation/reporting stay untouched.
         """
         method = cfg.adjudication_method
@@ -708,50 +712,14 @@ class Pipeline:
             )
         if method == "fda_timeline":
             import os
-            from .fda import AnthropicJSONClient, FDAClient, OpenAICompatJSONClient
+            from .fda import FDAClient
 
             fda = FDAClient(
                 cache_dir=cfg.fda_cache_dir,
                 openfda_api_key=cfg.openfda_api_key or os.getenv("OPENFDA_API_KEY"),
                 timeout=cfg.fda_http_timeout,
             )
-
-            backend = cfg.fda_llm_backend
-            if backend == "anthropic":
-                anthropic_kwargs = {"cache": cache, "ledger": self._ledger}
-                if cfg.fda_llm_model:
-                    anthropic_kwargs["model"] = cfg.fda_llm_model
-                llm = AnthropicJSONClient(**anthropic_kwargs)
-                logger.info(
-                    "FDA adjudication using anthropic backend: %s",
-                    cfg.fda_llm_model or "default sonnet",
-                )
-            elif backend == "openai_compat":
-                base_url = cfg.fda_llm_base_url or DEFAULT_OPENAI_COMPAT_BASE_URL
-                model = cfg.fda_llm_model or DEFAULT_OPENAI_COMPAT_MODEL
-                llm = OpenAICompatJSONClient(
-                    base_url=base_url,
-                    model=model,
-                    api_key=cfg.fda_llm_api_key,
-                    timeout=cfg.fda_llm_timeout,
-                    cache=cache,
-                    ledger=self._ledger,
-                )
-                logger.info(
-                    "FDA adjudication using openai_compat backend: %s @ %s "
-                    "(workers=%d, llm_timeout=%.0fs, http_timeout=%.0fs)",
-                    model,
-                    base_url,
-                    cfg.fda_adjudication_workers,
-                    cfg.fda_llm_timeout,
-                    cfg.fda_http_timeout,
-                )
-            else:
-                raise ValueError(
-                    f"Unknown fda_llm_backend: {backend!r}. "
-                    "Expected 'openai_compat' or 'anthropic'."
-                )
-
+            llm = self._build_fda_llm_client(cfg, cache, stage_label="adjudication_fda")
             return FDAAdjudicationStage(
                 fda_client=fda,
                 llm_client=llm,
@@ -762,9 +730,68 @@ class Pipeline:
                 cache=cache,
                 workers=cfg.fda_adjudication_workers,
             )
+        if method == "ndc_indication":
+            llm = self._build_fda_llm_client(cfg, cache, stage_label="adjudication_ndc")
+            return NDCAdjudicationStage(
+                llm_client=llm,
+                config=NDCAdjudicationConfig(
+                    as_of=cfg.fda_adjudication_as_of,
+                    failure_window_days=cfg.fda_failure_window_days,
+                    drugbank_synonyms_csv=cfg.drugbank_synonyms_csv,
+                ),
+                cache=cache,
+                workers=cfg.fda_adjudication_workers,
+            )
         raise ValueError(
             f"Unknown adjudication_method: {method!r}. "
-            "Expected 'llm_direct' or 'fda_timeline'."
+            "Expected 'llm_direct', 'fda_timeline', or 'ndc_indication'."
+        )
+
+    def _build_fda_llm_client(
+        self, cfg: "PipelineConfig", cache, *, stage_label: str
+    ):
+        """Construct the LLM client used by the FDA-timeline and NDC stages.
+
+        Both stages share the ``--fda-llm-*`` CLI flags. ``stage_label``
+        determines which stage the cost ledger attributes calls to.
+        """
+        from .fda import AnthropicJSONClient, OpenAICompatJSONClient
+
+        backend = cfg.fda_llm_backend
+        if backend == "anthropic":
+            kwargs = {"cache": cache, "ledger": self._ledger, "stage_label": stage_label}
+            if cfg.fda_llm_model:
+                kwargs["model"] = cfg.fda_llm_model
+            llm = AnthropicJSONClient(**kwargs)
+            logger.info(
+                "%s using anthropic backend: %s",
+                stage_label, cfg.fda_llm_model or "default sonnet",
+            )
+            return llm
+        if backend == "openai_compat":
+            base_url = cfg.fda_llm_base_url or DEFAULT_OPENAI_COMPAT_BASE_URL
+            model = cfg.fda_llm_model or DEFAULT_OPENAI_COMPAT_MODEL
+            llm = OpenAICompatJSONClient(
+                base_url=base_url,
+                model=model,
+                api_key=cfg.fda_llm_api_key,
+                timeout=cfg.fda_llm_timeout,
+                cache=cache,
+                ledger=self._ledger,
+                stage_label=stage_label,
+            )
+            logger.info(
+                "%s using openai_compat backend: %s @ %s "
+                "(workers=%d, llm_timeout=%.0fs, http_timeout=%.0fs)",
+                stage_label, model, base_url,
+                cfg.fda_adjudication_workers,
+                cfg.fda_llm_timeout,
+                cfg.fda_http_timeout,
+            )
+            return llm
+        raise ValueError(
+            f"Unknown fda_llm_backend: {backend!r}. "
+            "Expected 'openai_compat' or 'anthropic'."
         )
 
     def _build_enrichment_stages(self) -> list:

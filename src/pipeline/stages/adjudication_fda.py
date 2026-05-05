@@ -35,7 +35,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
 from ..models import (
@@ -55,6 +55,7 @@ from ..fda import (
     TimelineBuilder,
 )
 from ..fda.timeline import DrugApprovalTimeline, IndicationApprovalEvent
+from ._no_approval import classify_no_approval
 
 logger = logging.getLogger(__name__)
 
@@ -345,25 +346,11 @@ class AdjudicationStage:
         )
 
     def _failure_or_ongoing_outcome(self, candidate: Candidate) -> CandidateOutcome:
-        last_update = candidate.latest_completion_date or candidate.earliest_start_date
-        if last_update is None:
-            return CandidateOutcome.ONGOING
-
-        as_of = self.config.as_of or date.today()
-        if as_of - last_update < timedelta(days=self.config.failure_window_days):
-            return CandidateOutcome.ONGOING
-
-        phase = _phase_to_int(candidate.highest_phase)
-        if phase >= 3:
-            # Phase 4 without an approval match is unusual (would imply
-            # the drug is approved elsewhere but we couldn't match its
-            # indication). Conservatively bucket with Phase 3 failures.
-            return CandidateOutcome.FAILED_PHASE_3
-        if phase == 2:
-            return CandidateOutcome.FAILED_PHASE_2
-        if phase == 1:
-            return CandidateOutcome.FAILED_PHASE_1
-        return CandidateOutcome.ONGOING
+        return classify_no_approval(
+            candidate,
+            failure_window_days=self.config.failure_window_days,
+            as_of=self.config.as_of,
+        )
 
     def _error_record(self, candidate: Candidate, err: str) -> CandidateOutcomeRecord:
         return CandidateOutcomeRecord(
@@ -379,18 +366,9 @@ class AdjudicationStage:
 
 # ---------- module-level helpers (unit-testable) ----------
 
-_PHASE_TO_INT: dict[TrialPhase, int] = {
-    TrialPhase.PHASE_1: 1,
-    TrialPhase.PHASE_2: 2,
-    TrialPhase.PHASE_3: 3,
-    TrialPhase.PHASE_4: 4,
-    TrialPhase.NOT_APPLICABLE: 0,
-    TrialPhase.UNKNOWN: 0,
-}
-
-
-def _phase_to_int(phase: TrialPhase) -> int:
-    return _PHASE_TO_INT.get(phase, 0)
+# Re-exported from _no_approval for backwards compatibility with tests
+# that import these names from this module.
+from ._no_approval import _PHASE_TO_INT, _phase_to_int  # noqa: E402, F401
 
 
 def _append(

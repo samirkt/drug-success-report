@@ -155,11 +155,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--adjudication-method",
-        choices=["fda_timeline", "llm_direct"],
+        choices=["fda_timeline", "llm_direct", "ndc_indication"],
         default="llm_direct",
         help="Outcome adjudication method. 'fda_timeline' reconstructs each drug's "
-             "FDA approval timeline from openFDA and matches indications against it "
-             "(default). 'llm_direct' asks the LLM directly and uses the KnowledgeCache.",
+             "FDA approval timeline from openFDA (HTTP). 'ndc_indication' looks up "
+             "label indications from a local SQLite mirror via utils.ndc_lookup and "
+             "asks the LLM whether the trial indication is covered (no network). "
+             "'llm_direct' asks the LLM directly and uses the KnowledgeCache.",
     )
     parser.add_argument(
         "--fda-cache-dir",
