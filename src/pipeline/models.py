@@ -142,6 +142,17 @@ class Candidate:
     # when the candidate's `indication` (or `mesh_indication`) case-
     # insensitively matches an OT indication row for the same drug.
     opentargets_indication_max_phase: Optional[int] = None
+    # Reactome — pathway membership joined on UniProt accessions in
+    # `drug_targets`. Multi-target candidates aggregate by union across
+    # all targets. None when stage skipped; False when target list was
+    # empty or no targets found in Reactome; True with populated lists
+    # otherwise. `reactome_pathway_names` is parallel-ordered with
+    # `reactome_pathway_ids` and is for inspection only —
+    # `reactome_n_pathways` is the canonical count feature.
+    reactome_pathway_ids: list[str] = field(default_factory=list)
+    reactome_pathway_names: list[str] = field(default_factory=list)
+    reactome_n_pathways: Optional[int] = None
+    reactome_has_data: Optional[bool] = None
     # ADMET — predicted from canonical SMILES via admet_ai (52 raw
     # properties + 52 DrugBank-approved-percentile siblings). Names
     # mirror admet_ai's column tuple in `pipeline.admet.admet_columns`

@@ -12,6 +12,7 @@ from .base import EnrichmentStage, run_enrichments
 from .chembl_smiles import ChemblSmilesEnrichment
 from .icd import IcdEnrichment
 from .opentargets import OpenTargetsEnrichment
+from .reactome import ReactomeEnrichment
 from .smiles import SmilesEnrichment
 from .smiles_standardization import SmilesStandardizationEnrichment
 from .targets import TargetsEnrichment
@@ -22,6 +23,7 @@ __all__ = [
     "EnrichmentStage",
     "IcdEnrichment",
     "OpenTargetsEnrichment",
+    "ReactomeEnrichment",
     "SmilesEnrichment",
     "SmilesStandardizationEnrichment",
     "TargetsEnrichment",

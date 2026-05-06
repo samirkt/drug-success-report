@@ -165,6 +165,16 @@ def candidate_summary_table(
                 if cand.opentargets_pathways else None
             ),
             "opentargets_indication_max_phase": cand.opentargets_indication_max_phase,
+            "reactome_pathway_ids": (
+                "|".join(cand.reactome_pathway_ids)
+                if cand.reactome_pathway_ids else None
+            ),
+            "reactome_pathway_names": (
+                "|".join(cand.reactome_pathway_names)
+                if cand.reactome_pathway_names else None
+            ),
+            "reactome_n_pathways": cand.reactome_n_pathways,
+            "reactome_has_data": cand.reactome_has_data,
         })
     return rows
 

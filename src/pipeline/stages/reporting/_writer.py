@@ -113,6 +113,11 @@ def write_candidate_detail(
         "opentargets_targets",
         "opentargets_pathways",
         "opentargets_indication_max_phase",
+        # Reactome (joined on UniProt accessions in drug_targets)
+        "reactome_pathway_ids",
+        "reactome_pathway_names",
+        "reactome_n_pathways",
+        "reactome_has_data",
         # ADMET (admet_ai predictions; see pipeline.admet.admet_columns)
         *_ADMET_FIELD_NAMES,
         # CandidateAttributes
@@ -174,6 +179,16 @@ def write_candidate_detail(
                 "opentargets_indication_max_phase": (
                     str(c.opentargets_indication_max_phase)
                     if c.opentargets_indication_max_phase is not None else ""
+                ),
+                "reactome_pathway_ids": "|".join(c.reactome_pathway_ids),
+                "reactome_pathway_names": "|".join(c.reactome_pathway_names),
+                "reactome_n_pathways": (
+                    str(c.reactome_n_pathways)
+                    if c.reactome_n_pathways is not None else ""
+                ),
+                "reactome_has_data": (
+                    "" if c.reactome_has_data is None
+                    else ("true" if c.reactome_has_data else "false")
                 ),
                 **{
                     fn: ("" if getattr(c, fn) is None else getattr(c, fn))
@@ -849,6 +864,11 @@ def write_candidate_parquet(
             "opentargets_targets": list(c.opentargets_targets),
             "opentargets_pathways": list(c.opentargets_pathways),
             "opentargets_indication_max_phase": c.opentargets_indication_max_phase,
+            # Reactome (joined on UniProt accessions in drug_targets)
+            "reactome_pathway_ids": list(c.reactome_pathway_ids),
+            "reactome_pathway_names": list(c.reactome_pathway_names),
+            "reactome_n_pathways": c.reactome_n_pathways,
+            "reactome_has_data": c.reactome_has_data,
             # ADMET predictions
             **{fn: getattr(c, fn) for fn in _ADMET_FIELD_NAMES},
             # Classification

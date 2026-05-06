@@ -194,6 +194,13 @@ class PipelineConfig:
     # OpenTargets snapshot built by `scripts/build_opentargets_snapshot.py`.
     # When None or missing, the OT enrichment is skipped cleanly.
     opentargets_snapshot_path: Optional[Path] = None
+    # Reactome pathway enrichment — joins each candidate's UniProt
+    # accessions in `drug_targets` against UniProt2Reactome_All_Levels.txt
+    # (filtered to Homo sapiens). Default data dir resolves to the
+    # project's `data/reactome/` directory at stage-build time. Skipped
+    # cleanly when the directory or files are missing.
+    enable_reactome: bool = True
+    reactome_data_dir: Optional[Path] = None
     # ICD-10 code granularity: "full" (e.g. C34.90), "category" (3-char
     # prefix, e.g. C34), or "chapter" (e.g. C00-D49).
     icd10_granularity: str = "category"
@@ -817,6 +824,7 @@ class Pipeline:
             ChemblSmilesEnrichment,
             IcdEnrichment,
             OpenTargetsEnrichment,
+            ReactomeEnrichment,
             SmilesEnrichment,
             SmilesStandardizationEnrichment,
             TargetsEnrichment,
@@ -831,6 +839,15 @@ class Pipeline:
             stages.append(ChemblSmilesEnrichment())
         if self.config.enable_opentargets:
             stages.append(OpenTargetsEnrichment())
+        if self.config.enable_reactome:
+            # Default to <project>/data/reactome/ if the user didn't
+            # configure a path. Pipeline file is at src/pipeline/pipeline.py,
+            # so project root is two parents up.
+            if self.config.reactome_data_dir is None:
+                self.config.reactome_data_dir = (
+                    Path(__file__).resolve().parents[2] / "data" / "reactome"
+                )
+            stages.append(ReactomeEnrichment())
         if self.config.enable_smiles_standardization:
             # Canonicalization runs last so DrugBank + ChEMBL have both
             # had a chance to populate `Candidate.smiles`.

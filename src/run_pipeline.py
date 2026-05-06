@@ -315,6 +315,25 @@ def parse_args() -> argparse.Namespace:
              "re-runs are free. Required for the HINT export.",
     )
     parser.add_argument(
+        "--enable-reactome",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enrich each candidate with Reactome pathway membership "
+             "joined by UniProt ID (drug_targets). Enabled by default; "
+             "skipped silently if --reactome-data-dir is missing or its "
+             "files don't exist. Adds reactome_pathway_ids, "
+             "reactome_pathway_names, reactome_n_pathways, "
+             "reactome_has_data.",
+    )
+    parser.add_argument(
+        "--reactome-data-dir",
+        default=None,
+        metavar="PATH",
+        help="Directory containing UniProt2Reactome_All_Levels.txt, "
+             "ReactomePathways.txt, and reactome_version.txt. Defaults "
+             "to <project>/data/reactome/.",
+    )
+    parser.add_argument(
         "--chembl-snapshot",
         default=None,
         metavar="PATH",
@@ -407,6 +426,10 @@ def main() -> None:
            if args.enable_opentargets is not None else {}),
         **({"enable_icd10": args.enable_icd10}
            if args.enable_icd10 is not None else {}),
+        **({"enable_reactome": args.enable_reactome}
+           if args.enable_reactome is not None else {}),
+        **({"reactome_data_dir": Path(args.reactome_data_dir)}
+           if args.reactome_data_dir else {}),
         chembl_snapshot_path=chembl_snapshot_path,
         opentargets_snapshot_path=opentargets_snapshot_path,
         icd10_granularity=args.icd10_granularity,
