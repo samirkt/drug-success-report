@@ -25,12 +25,12 @@ dependencies = [
     "tqdm>=4.67.1",
     "pyarrow>=24.0.0",
     "ipykernel>=7.2.0",
-    "transformers>=5.7.0",
+    "transformers>=4.40,<5",
 ]
 
 [project.optional-dependencies]
 modeling = [
-    "transformers>=4.40.0",
+    "transformers>=4.40,<5",
     "torch>=2.2.0",
     "scikit-learn>=1.4.0",
     "xgboost>=2.0.0",
