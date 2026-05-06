@@ -7,6 +7,7 @@ every KnowledgeCache key derived from those fields remains stable whether
 a given enrichment is enabled or not.
 """
 
+from .admet import AdmetEnrichment
 from .base import EnrichmentStage, run_enrichments
 from .chembl_smiles import ChemblSmilesEnrichment
 from .icd import IcdEnrichment
@@ -16,6 +17,7 @@ from .smiles_standardization import SmilesStandardizationEnrichment
 from .targets import TargetsEnrichment
 
 __all__ = [
+    "AdmetEnrichment",
     "ChemblSmilesEnrichment",
     "EnrichmentStage",
     "IcdEnrichment",

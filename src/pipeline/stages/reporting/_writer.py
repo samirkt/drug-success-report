@@ -9,6 +9,7 @@ from typing import Optional
 
 import numpy as np
 
+from ...admet import ADMET_COLUMNS, field_name as _admet_field
 from ...models import (
     AttributeTable,
     CandidateOutcomeRecord,
@@ -19,6 +20,8 @@ from ...models import (
     TrialTable,
 )
 from . import _compute
+
+_ADMET_FIELD_NAMES = tuple(_admet_field(c) for c in ADMET_COLUMNS)
 
 
 def write_report(
@@ -110,6 +113,8 @@ def write_candidate_detail(
         "opentargets_targets",
         "opentargets_pathways",
         "opentargets_indication_max_phase",
+        # ADMET (admet_ai predictions; see pipeline.admet.admet_columns)
+        *_ADMET_FIELD_NAMES,
         # CandidateAttributes
         "modality",
         "disease_area",
@@ -170,6 +175,10 @@ def write_candidate_detail(
                     str(c.opentargets_indication_max_phase)
                     if c.opentargets_indication_max_phase is not None else ""
                 ),
+                **{
+                    fn: ("" if getattr(c, fn) is None else getattr(c, fn))
+                    for fn in _ADMET_FIELD_NAMES
+                },
                 "modality": attrs.drug_modality if attrs else "",
                 "disease_area": attrs.disease_area if attrs else "",
                 "modality_confidence": attrs.modality_confidence if attrs else "",
@@ -840,6 +849,8 @@ def write_candidate_parquet(
             "opentargets_targets": list(c.opentargets_targets),
             "opentargets_pathways": list(c.opentargets_pathways),
             "opentargets_indication_max_phase": c.opentargets_indication_max_phase,
+            # ADMET predictions
+            **{fn: getattr(c, fn) for fn in _ADMET_FIELD_NAMES},
             # Classification
             "modality": attrs.drug_modality if attrs else None,
             "disease_area": attrs.disease_area if attrs else None,

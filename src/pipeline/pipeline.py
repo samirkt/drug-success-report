@@ -174,6 +174,14 @@ class PipelineConfig:
     # left untouched. Lazy-imports rdkit and chembl_structure_pipeline
     # so missing deps degrade to a one-line skip rather than a hard fail.
     enable_smiles_standardization: bool = True
+    # ADMET enrichment: predict ~104 chemical/biological properties from
+    # canonical SMILES via the admet_ai library (chemprop ensembles).
+    # Lazy-imports admet_ai so a deploy without it just logs a one-line
+    # skip. Predictions are cached per (sha256(smiles), admet_ai version)
+    # in a standalone SQLite owned by the pipeline.admet package; default
+    # path is `<output>/cache/admet_cache.db`.
+    enable_admet: bool = True
+    admet_cache_path: Optional[Path] = None
     # OpenTargets Platform enrichment: mechanism-of-action text, target
     # approved symbols, Reactome pathways, and per-indication max
     # development phase. Requires `opentargets_snapshot_path` to be set
@@ -805,6 +813,7 @@ class Pipeline:
         off or missing-data stages are skipped silently here.
         """
         from .enrichment import (
+            AdmetEnrichment,
             ChemblSmilesEnrichment,
             IcdEnrichment,
             OpenTargetsEnrichment,
@@ -826,6 +835,13 @@ class Pipeline:
             # Canonicalization runs last so DrugBank + ChEMBL have both
             # had a chance to populate `Candidate.smiles`.
             stages.append(SmilesStandardizationEnrichment())
+        if self.config.enable_admet:
+            # ADMET runs after standardization so it can prefer
+            # smiles_canonical over the raw input.
+            cache_path = self.config.admet_cache_path
+            if cache_path is None and self.config.report_output_path:
+                cache_path = Path(self.config.report_output_path) / "cache" / "admet_cache.db"
+            stages.append(AdmetEnrichment(cache_path=cache_path))
         if self.config.enable_icd10:
             cache_path = None
             if self.config.report_output_path:

@@ -142,6 +142,117 @@ class Candidate:
     # when the candidate's `indication` (or `mesh_indication`) case-
     # insensitively matches an OT indication row for the same drug.
     opentargets_indication_max_phase: Optional[int] = None
+    # ADMET — predicted from canonical SMILES via admet_ai (52 raw
+    # properties + 52 DrugBank-approved-percentile siblings). Names
+    # mirror admet_ai's column tuple in `pipeline.admet.admet_columns`
+    # with hyphens normalized to underscores by `field_name`. None when
+    # the enrichment is disabled, admet_ai is missing, or the SMILES
+    # failed to predict.
+    admet_molecular_weight: Optional[float] = None
+    admet_logP: Optional[float] = None
+    admet_hydrogen_bond_acceptors: Optional[float] = None
+    admet_hydrogen_bond_donors: Optional[float] = None
+    admet_Lipinski: Optional[float] = None
+    admet_QED: Optional[float] = None
+    admet_stereo_centers: Optional[float] = None
+    admet_tpsa: Optional[float] = None
+    admet_PAINS_alert: Optional[float] = None
+    admet_BRENK_alert: Optional[float] = None
+    admet_NIH_alert: Optional[float] = None
+    admet_AMES: Optional[float] = None
+    admet_BBB_Martins: Optional[float] = None
+    admet_Bioavailability_Ma: Optional[float] = None
+    admet_CYP1A2_Veith: Optional[float] = None
+    admet_CYP2C19_Veith: Optional[float] = None
+    admet_CYP2C9_Substrate_CarbonMangels: Optional[float] = None
+    admet_CYP2C9_Veith: Optional[float] = None
+    admet_CYP2D6_Substrate_CarbonMangels: Optional[float] = None
+    admet_CYP2D6_Veith: Optional[float] = None
+    admet_CYP3A4_Substrate_CarbonMangels: Optional[float] = None
+    admet_CYP3A4_Veith: Optional[float] = None
+    admet_Carcinogens_Lagunin: Optional[float] = None
+    admet_ClinTox: Optional[float] = None
+    admet_DILI: Optional[float] = None
+    admet_HIA_Hou: Optional[float] = None
+    admet_NR_AR_LBD: Optional[float] = None
+    admet_NR_AR: Optional[float] = None
+    admet_NR_AhR: Optional[float] = None
+    admet_NR_Aromatase: Optional[float] = None
+    admet_NR_ER_LBD: Optional[float] = None
+    admet_NR_ER: Optional[float] = None
+    admet_NR_PPAR_gamma: Optional[float] = None
+    admet_PAMPA_NCATS: Optional[float] = None
+    admet_Pgp_Broccatelli: Optional[float] = None
+    admet_SR_ARE: Optional[float] = None
+    admet_SR_ATAD5: Optional[float] = None
+    admet_SR_HSE: Optional[float] = None
+    admet_SR_MMP: Optional[float] = None
+    admet_SR_p53: Optional[float] = None
+    admet_Skin_Reaction: Optional[float] = None
+    admet_hERG: Optional[float] = None
+    admet_Caco2_Wang: Optional[float] = None
+    admet_Clearance_Hepatocyte_AZ: Optional[float] = None
+    admet_Clearance_Microsome_AZ: Optional[float] = None
+    admet_Half_Life_Obach: Optional[float] = None
+    admet_HydrationFreeEnergy_FreeSolv: Optional[float] = None
+    admet_LD50_Zhu: Optional[float] = None
+    admet_Lipophilicity_AstraZeneca: Optional[float] = None
+    admet_PPBR_AZ: Optional[float] = None
+    admet_Solubility_AqSolDB: Optional[float] = None
+    admet_VDss_Lombardo: Optional[float] = None
+    # DrugBank-approved-set percentile rank for each property above.
+    admet_molecular_weight_drugbank_approved_percentile: Optional[float] = None
+    admet_logP_drugbank_approved_percentile: Optional[float] = None
+    admet_hydrogen_bond_acceptors_drugbank_approved_percentile: Optional[float] = None
+    admet_hydrogen_bond_donors_drugbank_approved_percentile: Optional[float] = None
+    admet_Lipinski_drugbank_approved_percentile: Optional[float] = None
+    admet_QED_drugbank_approved_percentile: Optional[float] = None
+    admet_stereo_centers_drugbank_approved_percentile: Optional[float] = None
+    admet_tpsa_drugbank_approved_percentile: Optional[float] = None
+    admet_PAINS_alert_drugbank_approved_percentile: Optional[float] = None
+    admet_BRENK_alert_drugbank_approved_percentile: Optional[float] = None
+    admet_NIH_alert_drugbank_approved_percentile: Optional[float] = None
+    admet_AMES_drugbank_approved_percentile: Optional[float] = None
+    admet_BBB_Martins_drugbank_approved_percentile: Optional[float] = None
+    admet_Bioavailability_Ma_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP1A2_Veith_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP2C19_Veith_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP2C9_Substrate_CarbonMangels_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP2C9_Veith_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP2D6_Substrate_CarbonMangels_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP2D6_Veith_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP3A4_Substrate_CarbonMangels_drugbank_approved_percentile: Optional[float] = None
+    admet_CYP3A4_Veith_drugbank_approved_percentile: Optional[float] = None
+    admet_Carcinogens_Lagunin_drugbank_approved_percentile: Optional[float] = None
+    admet_ClinTox_drugbank_approved_percentile: Optional[float] = None
+    admet_DILI_drugbank_approved_percentile: Optional[float] = None
+    admet_HIA_Hou_drugbank_approved_percentile: Optional[float] = None
+    admet_NR_AR_LBD_drugbank_approved_percentile: Optional[float] = None
+    admet_NR_AR_drugbank_approved_percentile: Optional[float] = None
+    admet_NR_AhR_drugbank_approved_percentile: Optional[float] = None
+    admet_NR_Aromatase_drugbank_approved_percentile: Optional[float] = None
+    admet_NR_ER_LBD_drugbank_approved_percentile: Optional[float] = None
+    admet_NR_ER_drugbank_approved_percentile: Optional[float] = None
+    admet_NR_PPAR_gamma_drugbank_approved_percentile: Optional[float] = None
+    admet_PAMPA_NCATS_drugbank_approved_percentile: Optional[float] = None
+    admet_Pgp_Broccatelli_drugbank_approved_percentile: Optional[float] = None
+    admet_SR_ARE_drugbank_approved_percentile: Optional[float] = None
+    admet_SR_ATAD5_drugbank_approved_percentile: Optional[float] = None
+    admet_SR_HSE_drugbank_approved_percentile: Optional[float] = None
+    admet_SR_MMP_drugbank_approved_percentile: Optional[float] = None
+    admet_SR_p53_drugbank_approved_percentile: Optional[float] = None
+    admet_Skin_Reaction_drugbank_approved_percentile: Optional[float] = None
+    admet_hERG_drugbank_approved_percentile: Optional[float] = None
+    admet_Caco2_Wang_drugbank_approved_percentile: Optional[float] = None
+    admet_Clearance_Hepatocyte_AZ_drugbank_approved_percentile: Optional[float] = None
+    admet_Clearance_Microsome_AZ_drugbank_approved_percentile: Optional[float] = None
+    admet_Half_Life_Obach_drugbank_approved_percentile: Optional[float] = None
+    admet_HydrationFreeEnergy_FreeSolv_drugbank_approved_percentile: Optional[float] = None
+    admet_LD50_Zhu_drugbank_approved_percentile: Optional[float] = None
+    admet_Lipophilicity_AstraZeneca_drugbank_approved_percentile: Optional[float] = None
+    admet_PPBR_AZ_drugbank_approved_percentile: Optional[float] = None
+    admet_Solubility_AqSolDB_drugbank_approved_percentile: Optional[float] = None
+    admet_VDss_Lombardo_drugbank_approved_percentile: Optional[float] = None
 
 
 @dataclass

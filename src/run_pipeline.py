@@ -288,6 +288,23 @@ def parse_args() -> argparse.Namespace:
              "enrichment is skipped with a single warning.",
     )
     parser.add_argument(
+        "--enable-admet",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Predict ~104 ADMET properties from canonical SMILES via "
+             "admet_ai (chemprop ensembles). Enabled by default; skipped "
+             "silently when admet_ai is not installed. Predictions are "
+             "cached per (smiles, admet_ai version) in a standalone "
+             "SQLite at --admet-cache-path (default <output>/cache/admet_cache.db).",
+    )
+    parser.add_argument(
+        "--admet-cache-path",
+        default=None,
+        metavar="PATH",
+        help="Path to the ADMET prediction SQLite cache. Defaults to "
+             "<output>/cache/admet_cache.db when --output is set.",
+    )
+    parser.add_argument(
         "--enable-icd10",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -382,6 +399,10 @@ def main() -> None:
            if args.enable_chembl_smiles is not None else {}),
         **({"enable_smiles_standardization": args.enable_smiles_standardization}
            if args.enable_smiles_standardization is not None else {}),
+        **({"enable_admet": args.enable_admet}
+           if args.enable_admet is not None else {}),
+        **({"admet_cache_path": Path(args.admet_cache_path)}
+           if args.admet_cache_path else {}),
         **({"enable_opentargets": args.enable_opentargets}
            if args.enable_opentargets is not None else {}),
         **({"enable_icd10": args.enable_icd10}

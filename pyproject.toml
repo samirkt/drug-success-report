@@ -5,6 +5,7 @@ description = "Automated pipeline for reconstructing drug-development trajectori
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "admet-ai>=2.0.1",
     "anthropic>=0.84.0",
     "chembl_structure_pipeline>=1.2.0",
     "fuzzywuzzy>=0.18.0",
