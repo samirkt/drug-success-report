@@ -68,11 +68,26 @@ class AdmetPredictor:
         if not misses:
             return result
 
+        # RDKit-validate before handing off. admet_ai 2.0.1 silently drops
+        # SMILES it can't parse, then crashes on torch.cat over an empty
+        # batch — taking down the entire batch's good predictions with it.
+        # Filter on our side; mark the unparseable ones as None so the
+        # caller's None-handling path catches them.
+        from rdkit import Chem
+        from rdkit import RDLogger
+        RDLogger.DisableLog("rdApp.*")
+        valid_misses = [s for s in misses if Chem.MolFromSmiles(s) is not None]
+        for smi in misses:
+            if smi not in valid_misses:
+                result[smi] = None
+        if not valid_misses:
+            return result
+
         self._ensure_model()
-        df = self._model.predict(smiles=misses)
+        df = self._model.predict(smiles=valid_misses)
 
         new_predictions: dict[str, dict[str, Optional[float]]] = {}
-        for smi in misses:
+        for smi in valid_misses:
             if smi not in df.index:
                 result[smi] = None
                 continue
