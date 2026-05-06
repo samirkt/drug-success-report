@@ -9,6 +9,7 @@ Usage:
 import argparse
 import logging
 import os
+import sys
 from pathlib import Path
 
 from pipeline import Pipeline, PipelineConfig
@@ -121,6 +122,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Include modality breakdown charts and tables for all drug modalities (default: peptide-only)",
+    )
+    parser.add_argument(
+        "--skip-classification",
+        action="store_true",
+        default=False,
+        help="Skip the classification LLM stage entirely. Modality is set "
+             "to 'unknown' for every candidate; disease area falls back to "
+             "MeSH-tree resolution where available. No LLM calls are made "
+             "and the attributes_cache is not written, so a future run with "
+             "this flag off classifies these candidates cleanly. Implies "
+             "--all-modalities (peptide filter requires real modality data).",
     )
     parser.add_argument(
         "--single-arm",
@@ -384,6 +396,15 @@ def main() -> None:
         Path(args.opentargets_snapshot) if args.opentargets_snapshot else None
     )
 
+    peptide_only_report = not args.all_modalities
+    if args.skip_classification and peptide_only_report:
+        print(
+            "Note: --skip-classification implies --all-modalities; "
+            "peptide filter disabled because modality is unknown without classification.",
+            file=sys.stderr,
+        )
+        peptide_only_report = False
+
     config = PipelineConfig(
         data_source=args.source,
         ingestion_filters=ingestion_filters,
@@ -396,7 +417,8 @@ def main() -> None:
         max_trials=args.max_trials if args.max_trials > 0 else None,
         max_candidates=args.max_candidates if (args.max_candidates or 0) > 0 else None,
         sample_seed=args.sample_seed,
-        peptide_only_report=not args.all_modalities,
+        peptide_only_report=peptide_only_report,
+        skip_classification=args.skip_classification,
         filter_single_arm=args.single_arm,
         use_ct_cache=args.use_ct_cache,
         ct_cache_path=args.ct_cache_path,

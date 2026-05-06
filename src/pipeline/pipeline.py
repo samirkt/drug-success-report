@@ -22,6 +22,7 @@ from typing import Optional
 
 from .models import (
     AttributeTable,
+    CandidateAttributes,
     CandidateTable,
     FunnelResults,
     OutcomeTable,
@@ -204,6 +205,17 @@ class PipelineConfig:
     # ICD-10 code granularity: "full" (e.g. C34.90), "category" (3-char
     # prefix, e.g. C34), or "chapter" (e.g. C00-D49).
     icd10_granularity: str = "category"
+
+    # When True, the pipeline skips the AttributeClassificationStage
+    # entirely — no LLM calls, no `attributes_cache` writes — and
+    # synthesizes an `AttributeTable` in-memory using MeSH-derived
+    # disease areas (when available) and `unknown` modality. Used to
+    # build candidates without paying for classification or polluting
+    # the cache with placeholder rows; a future run with this flag off
+    # will classify those (drug, indication) keys cleanly. Forces
+    # `peptide_only_report=False` because the peptide filter requires
+    # real modality data.
+    skip_classification: bool = False
 
     # Reporting
     report_output_path: str | None = None
@@ -576,6 +588,31 @@ class Pipeline:
         In peptide-only mode: classify first, filter to peptides, then adjudicate
         only the filtered set — avoiding wasted LLM calls on non-peptide candidates.
         """
+        if self.config.skip_classification:
+            from .stages.classification import mesh_trees_to_disease_area
+
+            attrs: dict[str, CandidateAttributes] = {}
+            for c in candidate_table.candidates:
+                mesh_disease = mesh_trees_to_disease_area(
+                    c.mesh_condition_tree_numbers
+                )
+                attrs[c.candidate_id] = CandidateAttributes(
+                    candidate_id=c.candidate_id,
+                    drug_modality="unknown",
+                    disease_area=mesh_disease or "unknown",
+                    modality_confidence=0.0,
+                    disease_confidence=1.0 if mesh_disease else 0.0,
+                    reasoning="classification skipped",
+                )
+            attribute_table = AttributeTable(attributes=attrs)
+            logger.info(
+                "Classification: skipped (skip_classification=True) — "
+                "synthesized %d placeholder rows, no LLM calls, cache untouched.",
+                len(attrs),
+            )
+            outcome_table = self._stages["adjudication"].run(candidate_table)
+            return attribute_table, outcome_table
+
         if not self.config.peptide_only_report:
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 future_attrs = executor.submit(
