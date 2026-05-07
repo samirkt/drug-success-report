@@ -14,7 +14,7 @@ Standalone usage::
 
     llm = OpenAICompatJSONClient(
         base_url="http://localhost:11434/v1",
-        model="qwen2.5:14b-instruct",
+        model="qwen2.5:7b-instruct",
     )
     adj = NDCAdjudicator(llm_client=llm)
     verdict = adj.adjudicate(

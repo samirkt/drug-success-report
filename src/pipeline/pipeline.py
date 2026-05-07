@@ -46,7 +46,7 @@ from utils.tiered_router import CostLedger
 logger = logging.getLogger(__name__)
 
 # Defaults for the OpenAI-compatible LLM backend on the FDA-timeline
-# adjudication stage. Points at local Ollama serving Qwen 2.5 14B Instruct
+# adjudication stage. Points at local Ollama serving Qwen 2.5 7B Instruct
 # — sized for a 36GB-unified-memory Mac with headroom for parallel KV-cache
 # slots (Q4_K_M weights ~9GB). The pre-LLM section extractor in
 # `pipeline/fda/section_extract.py` keeps inputs ~1.5-3k chars, well within
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # `PipelineConfig.fda_llm_base_url` / `fda_llm_model`, or CLI flags. Pass
 # `--fda-llm-model qwen2.5:32b-instruct` to opt back into the larger model.
 DEFAULT_OPENAI_COMPAT_BASE_URL = "http://localhost:11434/v1"
-DEFAULT_OPENAI_COMPAT_MODEL = "qwen2.5:14b-instruct"
+DEFAULT_OPENAI_COMPAT_MODEL = "qwen2.5:7b-instruct"
 
 # Timeouts for the FDA-timeline adjudication stage. The LLM ceiling is
 # generous to absorb cold-prompt latency on local models without masking a

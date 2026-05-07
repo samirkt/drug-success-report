@@ -120,13 +120,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--all-modalities",
         action="store_true",
-        default=False,
+        default=True,
         help="Include modality breakdown charts and tables for all drug modalities (default: peptide-only)",
     )
     parser.add_argument(
         "--skip-classification",
         action="store_true",
-        default=False,
+        default=True,
         help="Skip the classification LLM stage entirely. Modality is set "
              "to 'unknown' for every candidate; disease area falls back to "
              "MeSH-tree resolution where available. No LLM calls are made "
@@ -168,7 +168,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--adjudication-method",
         choices=["fda_timeline", "llm_direct", "ndc_indication"],
-        default="llm_direct",
+        default="ndc_indication",
         help="Outcome adjudication method. 'fda_timeline' reconstructs each drug's "
              "FDA approval timeline from openFDA (HTTP). 'ndc_indication' looks up "
              "label indications from a local SQLite mirror via utils.ndc_lookup and "
@@ -227,7 +227,7 @@ def parse_args() -> argparse.Namespace:
         help="Candidate-level parallelism for FDA-timeline adjudication. "
              "Default 1 (sequential). Set <= your Ollama OLLAMA_NUM_PARALLEL "
              "setting; raising past that just queues at the server. On a 36GB "
-             "M3 Max with the default qwen2.5:14b-instruct model, "
+             "M3 Max with the default qwen2.5:7b-instruct model, "
              "OLLAMA_NUM_PARALLEL=4 + --fda-adjudication-workers 4 is the "
              "sweet spot. Falls back to FDA_ADJUDICATION_WORKERS env var.",
     )

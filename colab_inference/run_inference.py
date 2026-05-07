@@ -9,7 +9,7 @@ re-issue an LLM call for them on the next run.
 
 Usage (Colab cell or local):
     python run_inference.py \\
-        --model Qwen/Qwen2.5-14B-Instruct \\
+        --model Qwen/Qwen2.5-7B-Instruct \\
         --work work_units.jsonl \\
         --out  verdicts.jsonl
 
@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--model", default="Qwen/Qwen2.5-14B-Instruct",
+    p.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct",
                    help="HF model id or local path. Use a 7B/14B for T4, "
-                        "32B+ for A100. Default: Qwen/Qwen2.5-14B-Instruct.")
+                        "32B+ for A100. Default: Qwen/Qwen2.5-7B-Instruct.")
     p.add_argument("--work", required=True,
                    help="Input work_units.jsonl produced by export_ndc_work.py.")
     p.add_argument("--out", required=True,
