@@ -50,7 +50,12 @@ def run_ablation(config: AblationConfig) -> AblationResult:
     base = config.base
     df = data_mod.build_modeling_frame(base)
     train_idx, test_idx = splits.split(
-        df, test_size=base.test_size, seed=base.seed, group_by=base.group_by,
+        df,
+        test_size=base.test_size,
+        seed=base.seed,
+        group_by=base.group_by,
+        time_split_column=base.time_split_column,
+        time_split_year=base.time_split_year,
     )
 
     subsets = _build_subsets(config)

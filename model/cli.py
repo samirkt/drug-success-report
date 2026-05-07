@@ -63,7 +63,21 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--group-by",
         default=None,
-        help="Column to keep disjoint between train/test (e.g. drug_name).",
+        help="Column to keep disjoint between train/test (e.g. drug_name). "
+             "Ignored when --time-split-year is set.",
+    )
+    p.add_argument(
+        "--time-split-year",
+        type=int,
+        default=None,
+        help="Temporal split: train on rows whose --time-split-column year "
+             "is <= this, test on rows with year > this. Disables --test-size "
+             "and --group-by when set.",
+    )
+    p.add_argument(
+        "--time-split-column",
+        default="earliest_start_date",
+        help="Column used for the temporal split (default: earliest_start_date).",
     )
     p.add_argument(
         "--groups",
@@ -126,6 +140,8 @@ def _build_config(args: argparse.Namespace) -> ModelingConfig:
         test_size=args.test_size,
         seed=args.seed,
         group_by=args.group_by,
+        time_split_column=args.time_split_column,
+        time_split_year=args.time_split_year,
         output_dir=args.output,
     )
 

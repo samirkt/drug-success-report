@@ -71,6 +71,12 @@ class ModelingConfig:
     seed: int = 0
     group_by: Optional[str] = None  # None or "drug_name"
 
+    # Temporal split: train on rows whose `time_split_column` year is
+    # <= time_split_year, test on rows whose year is > it. When
+    # `time_split_year` is set, `test_size` and `group_by` are ignored.
+    time_split_column: str = "earliest_start_date"
+    time_split_year: Optional[int] = None
+
     output_dir: Optional[Path] = None
 
 

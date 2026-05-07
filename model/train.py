@@ -108,6 +108,8 @@ def train_one_run(
             test_size=config.test_size,
             seed=config.seed,
             group_by=config.group_by,
+            time_split_column=config.time_split_column,
+            time_split_year=config.time_split_year,
         )
 
     train_df = df.iloc[train_idx].reset_index(drop=True)
