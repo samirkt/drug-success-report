@@ -147,6 +147,16 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(message)s",
         stream=sys.stdout,
     )
+    # Colab runs this as a subprocess (`!python run_inference.py ...`) which
+    # by default block-buffers stdout — no live progress until the buffer
+    # fills. Force line buffering so tqdm and log lines stream to the cell.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+    from tqdm.auto import tqdm
+
     args = parse_args()
 
     work_path = Path(args.work)
@@ -168,40 +178,46 @@ def main() -> None:
         return
 
     model, tokenizer = load_model(args.model, args.dtype, args.device)
+    logger.info("Model loaded; starting inference over %d work units", len(work_units))
 
     n_ok = 0
     n_err = 0
+    n_approved = 0
     t_start = time.monotonic()
+    pbar = tqdm(
+        work_units,
+        total=len(work_units),
+        unit="cand",
+        desc="adjudicate",
+        dynamic_ncols=True,
+        file=sys.stdout,
+        mininterval=0.5,
+    )
     with out_path.open("w") as f:
-        for i, work in enumerate(work_units, start=1):
-            t0 = time.monotonic()
+        for work in pbar:
             try:
                 verdict = adjudicate_one(model, tokenizer, work, args.max_new_tokens)
             except Exception as e:
                 n_err += 1
-                logger.warning(
-                    "[%d/%d] %s -> ERROR: %s",
-                    i, len(work_units),
-                    work.get("matched_synonym") or work.get("drug_name", "?"),
-                    e,
+                # One-line warning per error — tqdm.write keeps the bar intact.
+                pbar.write(
+                    f"[err] {work.get('matched_synonym') or work.get('drug_name', '?')}: {e}",
+                    file=sys.stdout,
                 )
+                pbar.set_postfix(ok=n_ok, err=n_err, approved=n_approved, refresh=False)
                 continue
             f.write(json.dumps(verdict) + "\n")
             f.flush()  # so a Colab disconnect doesn't lose progress
             n_ok += 1
-            dt = time.monotonic() - t0
-            logger.info(
-                "[%d/%d] %s | %s -> approved=%s (%.1fs)",
-                i, len(work_units),
-                work["matched_synonym"][:30],
-                work["trial_indication"][:40],
-                verdict["approved"], dt,
-            )
+            if verdict["approved"]:
+                n_approved += 1
+            pbar.set_postfix(ok=n_ok, err=n_err, approved=n_approved, refresh=False)
+    pbar.close()
 
     total = time.monotonic() - t_start
     logger.info(
-        "Done: %d ok, %d errors in %.1fs (%.1fs/call). Output: %s",
-        n_ok, n_err, total, total / max(1, n_ok + n_err), out_path,
+        "Done: %d ok, %d errors, %d approved in %.1fs (%.2fs/call). Output: %s",
+        n_ok, n_err, n_approved, total, total / max(1, n_ok + n_err), out_path,
     )
 
 
