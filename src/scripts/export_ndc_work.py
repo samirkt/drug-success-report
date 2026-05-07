@@ -74,6 +74,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--drugbank-synonyms-csv", default="data/drugbank_synonyms.csv",
                    help="Path to drugbank_synonyms.csv used by the pre-pass to "
                         "build the synonym list per candidate.")
+    p.add_argument("--use-ct-cache", action="store_true", default=False,
+                   help="Reuse aact_cache.pkl when --source aact. Match "
+                        "--max-trials and --keyword/--mesh exactly to the run "
+                        "that populated the cache (e.g. via run_pipeline.py / "
+                        "execute.sh) for cache hits.")
+    p.add_argument("--ct-cache-path", default="aact_cache.pkl",
+                   help="Path to AACT pickle cache. Default matches "
+                        "run_pipeline.py.")
+    p.add_argument("--chembl-snapshot", type=Path, default=None,
+                   help="Path to chembl_targets.sqlite. Speeds up the targets "
+                        "/ pathway enrichments.")
+    p.add_argument("--opentargets-snapshot", type=Path, default=None,
+                   help="Path to opentargets_snapshot.sqlite. Speeds up the "
+                        "OpenTargets enrichment.")
     p.add_argument("--top-k", type=int, default=20,
                    help="Top-K label indications to send (after dedup + split). "
                         "Default 20 matches the pipeline.")
@@ -112,6 +126,10 @@ def main() -> None:
         max_candidates=args.max_candidates if (args.max_candidates or 0) > 0 else None,
         sample_seed=args.sample_seed,
         candidate_year_range=year_range,
+        use_ct_cache=args.use_ct_cache,
+        ct_cache_path=args.ct_cache_path,
+        chembl_snapshot_path=args.chembl_snapshot,
+        opentargets_snapshot_path=args.opentargets_snapshot,
         # adjudication won't run -- we stop before stage 3 -- but the
         # config field is still required to be valid.
         adjudication_method="ndc_indication",
