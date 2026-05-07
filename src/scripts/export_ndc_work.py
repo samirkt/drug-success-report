@@ -88,6 +88,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--opentargets-snapshot", type=Path, default=None,
                    help="Path to opentargets_snapshot.sqlite. Speeds up the "
                         "OpenTargets enrichment.")
+    p.add_argument("--icd10-cache-path", type=Path, default=None,
+                   help="Path to ICD-10 lookup cache (sqlite). Default: "
+                        "icd10_cache.sqlite at CWD. Point at the same file "
+                        "as run_pipeline.py to share lookups between scripts.")
     p.add_argument("--top-k", type=int, default=20,
                    help="Top-K label indications to send (after dedup + split). "
                         "Default 20 matches the pipeline.")
@@ -130,6 +134,7 @@ def main() -> None:
         ct_cache_path=args.ct_cache_path,
         chembl_snapshot_path=args.chembl_snapshot,
         opentargets_snapshot_path=args.opentargets_snapshot,
+        icd10_cache_path=args.icd10_cache_path,
         # adjudication won't run -- we stop before stage 3 -- but the
         # config field is still required to be valid.
         adjudication_method="ndc_indication",

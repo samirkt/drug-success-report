@@ -327,6 +327,16 @@ def parse_args() -> argparse.Namespace:
              "re-runs are free. Required for the HINT export.",
     )
     parser.add_argument(
+        "--icd10-cache-path",
+        default=None,
+        metavar="PATH",
+        help="Path to ICD-10 lookup cache (sqlite). Default: "
+             "<output>/cache/icd_lookup.sqlite when --output is set, "
+             "else icd10_cache.sqlite at CWD. Pass an explicit path to "
+             "share a single cache across runs with different --output "
+             "dirs.",
+    )
+    parser.add_argument(
         "--enable-reactome",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -448,6 +458,8 @@ def main() -> None:
            if args.enable_opentargets is not None else {}),
         **({"enable_icd10": args.enable_icd10}
            if args.enable_icd10 is not None else {}),
+        **({"icd10_cache_path": Path(args.icd10_cache_path)}
+           if args.icd10_cache_path else {}),
         **({"enable_reactome": args.enable_reactome}
            if args.enable_reactome is not None else {}),
         **({"reactome_data_dir": Path(args.reactome_data_dir)}

@@ -183,6 +183,12 @@ class PipelineConfig:
     # path is `<output>/cache/admet_cache.db`.
     enable_admet: bool = True
     admet_cache_path: Optional[Path] = None
+    # ICD-10 lookup cache. Resolution order:
+    #   1. icd10_cache_path (explicit, highest priority)
+    #   2. <report_output_path>/cache/icd_lookup.sqlite (auto-derive)
+    #   3. icd10_cache.sqlite at CWD (stable default)
+    # Cache is always enabled; set enable_icd10=False to skip the stage.
+    icd10_cache_path: Optional[Path] = None
     # OpenTargets Platform enrichment: mechanism-of-action text, target
     # approved symbols, Reactome pathways, and per-indication max
     # development phase. Requires `opentargets_snapshot_path` to be set
@@ -897,8 +903,10 @@ class Pipeline:
                 cache_path = Path(self.config.report_output_path) / "cache" / "admet_cache.db"
             stages.append(AdmetEnrichment(cache_path=cache_path))
         if self.config.enable_icd10:
-            cache_path = None
-            if self.config.report_output_path:
+            cache_path = self.config.icd10_cache_path
+            if cache_path is None and self.config.report_output_path:
                 cache_path = Path(self.config.report_output_path) / "cache" / "icd_lookup.sqlite"
+            if cache_path is None:
+                cache_path = Path("icd10_cache.sqlite")
             stages.append(IcdEnrichment(cache_path=cache_path))
         return stages
