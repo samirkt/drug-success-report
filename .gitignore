@@ -10,3 +10,6 @@ pipeline.log
 _*.db
 *.pkl
 docs/*
+
+# TEMPORARY?
+*.ipynb
