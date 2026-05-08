@@ -564,24 +564,27 @@ class Pipeline:
         perturb any other RNG in the process.
         """
         n = self.config.max_candidates
-        if n is None or len(candidate_table.candidates) <= n:
+        if n is None:
             return candidate_table, trial_table
 
         rng = random.Random(self.config.sample_seed)
-        sampled = rng.sample(candidate_table.candidates, k=n)
+        k = min(n, len(candidate_table.candidates))
+        sampled = rng.sample(candidate_table.candidates, k=k)
 
         allowed_nct_ids: set[str] = set()
         for cand in sampled:
             allowed_nct_ids.update(cand.trial_ids)
         pruned_trials = [t for t in trial_table.trials if t.nct_id in allowed_nct_ids]
 
+        truncated = k < len(candidate_table.candidates)
         logger.info(
-            "Candidate sample (seed=%d): %d / %d candidates, %d / %d trials retained",
+            "Candidate sample (seed=%d): %d / %d candidates, %d / %d trials retained%s",
             self.config.sample_seed,
             len(sampled),
             len(candidate_table.candidates),
             len(pruned_trials),
             len(trial_table.trials),
+            "" if truncated else " (shuffle only, no truncation)",
         )
         return CandidateTable(candidates=sampled), TrialTable(trials=pruned_trials)
 
