@@ -13,9 +13,9 @@ from typing import Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CANDIDATE_DETAIL = PROJECT_ROOT / "docs" / "candidate_detail.parquet"
-DEFAULT_FINGERPRINTS = PROJECT_ROOT / "docs" / "features" / "fingerprints.parquet"
-DEFAULT_EMBEDDINGS = PROJECT_ROOT / "docs" / "features" / "molformer_embeddings.parquet"
+DEFAULT_CANDIDATE_DETAIL = PROJECT_ROOT / "outputs" / "candidate_detail.parquet"
+DEFAULT_FINGERPRINTS = PROJECT_ROOT / "outputs" / "features" / "fingerprints.parquet"
+DEFAULT_EMBEDDINGS = PROJECT_ROOT / "outputs" / "features" / "molformer_embeddings.parquet"
 
 ALL_FEATURE_GROUPS: tuple[str, ...] = (
     "fingerprints",
