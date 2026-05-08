@@ -255,6 +255,14 @@ def parse_args() -> argparse.Namespace:
              "utils/drugbank_minimizer.py).",
     )
     parser.add_argument(
+        "--require-smiles",
+        action="store_true",
+        default=False,
+        help="Drop candidates with no SMILES (raw or canonical) after the "
+             "enrichment pass, so adjudication/aggregation/reporting only "
+             "run on drugs the modeling pipeline can featurize.",
+    )
+    parser.add_argument(
         "--enable-targets",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -444,6 +452,7 @@ def main() -> None:
            if args.drop_uncached_candidates is not None else {}),
         **({"enable_smiles": args.enable_smiles}
            if args.enable_smiles is not None else {}),
+        require_smiles=args.require_smiles,
         **({"enable_targets": args.enable_targets}
            if args.enable_targets is not None else {}),
         **({"enable_chembl_smiles": args.enable_chembl_smiles}

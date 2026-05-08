@@ -152,6 +152,11 @@ class PipelineConfig:
     # `indication`, `highest_phase`, or `candidate_id`, so every
     # KnowledgeCache key derived from those fields remains stable.
     enable_smiles: bool = True
+    # When True, candidates with no SMILES (neither `smiles` nor
+    # `smiles_canonical` populated after enrichments) are dropped before
+    # classification, adjudication, aggregation, and reporting. Useful for
+    # restricting the run to drugs the modeling pipeline can featurize.
+    require_smiles: bool = False
     enable_targets: bool = True
     # ICD-10-CM enrichment: maps each candidate's `indication` text to a
     # list of ICD-10-CM codes via the NLM Clinical Tables API. Default
@@ -412,6 +417,7 @@ class Pipeline:
         result.candidate_table = self._run_clustering(result.trial_table)
         result.candidate_table = self._run_enrichments(result.candidate_table)
         result.candidate_table = self._filter_by_year_range(result.candidate_table)
+        result.candidate_table = self._filter_to_smiles_only(result.candidate_table)
         result.candidate_table, result.trial_table = self._filter_to_cached_candidates(
             result.candidate_table, result.trial_table
         )
@@ -498,6 +504,23 @@ class Pipeline:
         logger.info(
             "Year-range filter [%d-%d]: %d / %d candidates retained",
             start_yr, end_yr, len(filtered), len(candidate_table.candidates),
+        )
+        return CandidateTable(candidates=filtered)
+
+    def _filter_to_smiles_only(self, candidate_table: CandidateTable) -> CandidateTable:
+        """Drop candidates with no SMILES (raw or canonical) when require_smiles is set."""
+        if not self.config.require_smiles:
+            return candidate_table
+
+        def _has_smiles(c) -> bool:
+            return bool((c.smiles or "").strip()) or bool((c.smiles_canonical or "").strip())
+
+        filtered = [c for c in candidate_table.candidates if _has_smiles(c)]
+        logger.info(
+            "require_smiles: %d / %d candidates retained (dropped %d with no SMILES)",
+            len(filtered),
+            len(candidate_table.candidates),
+            len(candidate_table.candidates) - len(filtered),
         )
         return CandidateTable(candidates=filtered)
 
