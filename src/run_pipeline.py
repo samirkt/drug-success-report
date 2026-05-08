@@ -223,7 +223,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fda-adjudication-workers",
         type=int,
-        default=4,
+        default=1,
         help="Candidate-level parallelism for FDA-timeline adjudication. "
              "Default 1 (sequential). Set <= your Ollama OLLAMA_NUM_PARALLEL "
              "setting; raising past that just queues at the server. On a 36GB "
