@@ -10,6 +10,8 @@ from pathlib import Path
 
 from .ablate import run_ablation
 from .artifacts import save_run
+from .baselines import ALL_BASELINES
+from .baselines.runner import BaselinesConfig, run_baselines
 from .config import (
     ALL_FEATURE_GROUPS,
     AblationConfig,
@@ -158,6 +160,21 @@ def _cmd_train(args: argparse.Namespace) -> None:
     )
 
 
+def _cmd_baselines(args: argparse.Namespace) -> None:
+    config = _build_config(args)
+    selected = _parse_csv(args.baselines)
+    if not selected:
+        selected = ALL_BASELINES
+    for name in selected:
+        if name not in ALL_BASELINES:
+            raise SystemExit(
+                f"unknown baseline {name!r}; choose from {ALL_BASELINES}"
+            )
+    bl_cfg = BaselinesConfig(base=config, baselines=tuple(selected))
+    result = run_baselines(bl_cfg)
+    print(result.summary.to_string(index=False))
+
+
 def _cmd_ablate(args: argparse.Namespace) -> None:
     config = _build_config(args)
     custom: dict[str, tuple[str, ...]] = {}
@@ -193,6 +210,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="For --mode=custom: name=g1,g2,... ; pass repeatedly.",
     )
     p_abl.set_defaults(func=_cmd_ablate)
+
+    p_bl = sub.add_parser(
+        "baselines",
+        help="Run baseline models for 1:1 comparison against the full model.",
+    )
+    _add_common_args(p_bl)
+    p_bl.add_argument(
+        "--baselines",
+        default=",".join(ALL_BASELINES),
+        help=f"Comma-separated baselines to run. Available: {','.join(ALL_BASELINES)}",
+    )
+    p_bl.set_defaults(func=_cmd_baselines)
     return parser
 
 
