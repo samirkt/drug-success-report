@@ -81,6 +81,26 @@ class ModelingConfig:
 
 
 @dataclass
+class KillerFigureConfig:
+    """Hyperparameters for the killer-figure NN analog lookup.
+
+    `weights` is the per-component contribution to `joint_sim`; on a
+    query where a component is missing for either side, weights are
+    re-normalized over the components that *are* present. `min_neighbors`
+    is the unique-drug count below which retrieval falls back to the
+    stratum rate and flags `insufficient_prior_art`.
+    """
+
+    k: int = 10
+    weights: tuple[tuple[str, float], ...] = (
+        ("molecule", 1.0 / 3.0),
+        ("target", 1.0 / 3.0),
+        ("indication", 1.0 / 3.0),
+    )
+    min_neighbors: int = 5
+
+
+@dataclass
 class AblationConfig:
     """Ablation harness config — wraps a base ModelingConfig.
 

@@ -184,6 +184,9 @@ def run_baselines(config: BaselinesConfig) -> BaselinesResult:
                     metrics_dict=m,
                     baseline_state=bl.metadata(),
                 )
+                # Optional hook for baselines that emit extra artifacts.
+                if hasattr(bl, "write_artifacts"):
+                    bl.write_artifacts(output_root / name)
             row = _summary_row(
                 name=name,
                 groups=name,

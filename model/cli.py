@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from dataclasses import replace
+from datetime import date, datetime
 from pathlib import Path
 
 from .ablate import run_ablation
@@ -175,6 +177,70 @@ def _cmd_baselines(args: argparse.Namespace) -> None:
     print(result.summary.to_string(index=False))
 
 
+def _cmd_killer_figure(args: argparse.Namespace) -> None:
+    """`model killer-figure` — single-candidate NN analog lookup."""
+    from . import data as data_mod
+    from .killer_figure import (
+        KillerFigureRetriever,
+        build_adhoc_query,
+        format_text_summary,
+    )
+    from .baselines.killer_figure import _json_default
+
+    config = _build_config(args)
+    df = data_mod.build_modeling_frame(config)
+
+    if args.candidate_id and args.smiles:
+        raise SystemExit("--candidate-id and --smiles are mutually exclusive")
+    if not args.candidate_id and not (args.smiles or args.targets or args.icd10):
+        raise SystemExit(
+            "killer-figure: must provide either --candidate-id or at least one of "
+            "--smiles / --targets / --icd10 for an ad-hoc query"
+        )
+
+    if args.candidate_id:
+        match = df[df["candidate_id"] == args.candidate_id]
+        if match.empty:
+            raise SystemExit(
+                f"--candidate-id {args.candidate_id!r} not found in modeling frame "
+                f"({len(df)} rows). Check the id or relax the label filter."
+            )
+        query_row = match.iloc[0].to_dict()
+        # Pool = entire labeled df; date cutoff strictly excludes the query.
+        pool_df = df
+    else:
+        targets = _parse_csv(args.targets)
+        icd10 = _parse_csv(args.icd10)
+        mesh = _parse_csv(args.mesh)
+        start_date = _parse_iso_date(args.start_date) if args.start_date else date.today()
+        query_row = build_adhoc_query(
+            smiles=args.smiles,
+            targets=list(targets) if targets else None,
+            icd10=list(icd10) if icd10 else None,
+            mesh_tree_numbers=list(mesh) if mesh else None,
+            disease_area=args.disease_area,
+            start_date=start_date,
+        )
+        pool_df = df
+
+    retriever = KillerFigureRetriever(k=args.k, min_neighbors=args.min_neighbors)
+    retriever.fit(pool_df, pool_df["y"].values.astype(int))
+    report = retriever.retrieve(query_row)
+
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report.to_dict(), indent=2, default=_json_default))
+    print(format_text_summary(report))
+    print(f"\nReport written to {out_path}")
+
+
+def _parse_iso_date(s: str) -> date:
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise SystemExit(f"--start-date {s!r}: {exc}")
+
+
 def _cmd_ablate(args: argparse.Namespace) -> None:
     config = _build_config(args)
     custom: dict[str, tuple[str, ...]] = {}
@@ -222,6 +288,53 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Comma-separated baselines to run. Available: {','.join(ALL_BASELINES)}",
     )
     p_bl.set_defaults(func=_cmd_baselines)
+
+    p_kf = sub.add_parser(
+        "killer-figure",
+        help="NN analog lookup: 'candidates like this one reached approval X% vs Y% stratum, because Z'.",
+    )
+    _add_common_args(p_kf)
+    p_kf.add_argument("--k", type=int, default=10, help="Number of neighbors (default: 10).")
+    p_kf.add_argument(
+        "--min-neighbors",
+        type=int,
+        default=5,
+        help="Minimum unique-drug neighbors required; below this falls back to stratum rate.",
+    )
+    p_kf.add_argument(
+        "--candidate-id",
+        default=None,
+        help="Look up an existing candidate row by ID. Mutually exclusive with --smiles/--targets/--icd10.",
+    )
+    p_kf.add_argument(
+        "--smiles", default=None, help="Ad-hoc query: candidate SMILES string."
+    )
+    p_kf.add_argument(
+        "--targets",
+        default=None,
+        help="Ad-hoc query: comma-separated UniProt accessions (e.g. 'P51681,P52333').",
+    )
+    p_kf.add_argument(
+        "--icd10",
+        default=None,
+        help="Ad-hoc query: comma-separated ICD-10 codes (e.g. 'C71.9,C71.0').",
+    )
+    p_kf.add_argument(
+        "--mesh",
+        default=None,
+        help="Ad-hoc query: comma-separated MeSH tree numbers (e.g. 'C04.557,C04.588').",
+    )
+    p_kf.add_argument(
+        "--disease-area",
+        default=None,
+        help="Ad-hoc query: free-text disease area string matching the project taxonomy.",
+    )
+    p_kf.add_argument(
+        "--start-date",
+        default=None,
+        help="Ad-hoc query: ISO date YYYY-MM-DD; pool restricted to candidates with start < this. Defaults to today.",
+    )
+    p_kf.set_defaults(func=_cmd_killer_figure)
     return parser
 
 

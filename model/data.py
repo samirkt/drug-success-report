@@ -54,6 +54,7 @@ def apply_label(df: pd.DataFrame, label: LabelConfig) -> pd.DataFrame:
         raise ValueError("candidate_detail has no `outcome` column")
 
     n_before = len(df)
+    breakpoint()
     df = df[~df["outcome"].isin(label.exclude_outcomes)].copy()
     pos = set(label.positive)
     neg = set(label.negative)
