@@ -95,6 +95,7 @@ def write_candidate_detail(
         "sponsors",
         "earliest_start_date",
         "latest_completion_date",
+        "latest_update_submitted_date",
         "drugbank_id",
         "mesh_drug",
         "mesh_indication",
@@ -159,6 +160,10 @@ def write_candidate_detail(
                 "latest_completion_date": (
                     c.latest_completion_date.isoformat()
                     if c.latest_completion_date else ""
+                ),
+                "latest_update_submitted_date": (
+                    c.latest_update_submitted_date.isoformat()
+                    if c.latest_update_submitted_date else ""
                 ),
                 "drugbank_id": c.drugbank_id or "",
                 "mesh_drug": c.mesh_drug or "",
@@ -264,6 +269,7 @@ def write_trial_detail(
         "trial_mesh_condition_tree_numbers",
         "trial_start_date",
         "trial_completion_date",
+        "trial_last_update_submitted_date",
         "trial_is_single_arm",
         "trial_sponsor",
         "trial_title",
@@ -314,6 +320,10 @@ def write_trial_detail(
                 "trial_mesh_condition_tree_numbers": "|".join(t.mesh_condition_tree_numbers),
                 "trial_start_date": t.start_date.isoformat() if t.start_date else "",
                 "trial_completion_date": t.completion_date.isoformat() if t.completion_date else "",
+                "trial_last_update_submitted_date": (
+                    t.last_update_submitted_date.isoformat()
+                    if t.last_update_submitted_date else ""
+                ),
                 "trial_is_single_arm": "true" if t.is_single_arm else "false",
                 "trial_sponsor": t.sponsor,
                 "trial_title": t.title,
@@ -844,6 +854,7 @@ def write_candidate_parquet(
             "sponsors": list(c.sponsors),
             "earliest_start_date": c.earliest_start_date,
             "latest_completion_date": c.latest_completion_date,
+            "latest_update_submitted_date": c.latest_update_submitted_date,
             # Cross-references
             "drugbank_id": c.drugbank_id,
             "mesh_drug": c.mesh_drug,
@@ -966,6 +977,7 @@ def write_trial_parquet(
                 "trial_mesh_condition_tree_numbers": [],
                 "trial_start_date": None,
                 "trial_completion_date": None,
+                "trial_last_update_submitted_date": None,
                 "trial_is_single_arm": None,
                 "trial_sponsor": None,
                 "trial_title": None,
@@ -984,6 +996,7 @@ def write_trial_parquet(
             "trial_mesh_condition_tree_numbers": list(t.mesh_condition_tree_numbers),
             "trial_start_date": t.start_date,
             "trial_completion_date": t.completion_date,
+            "trial_last_update_submitted_date": t.last_update_submitted_date,
             "trial_is_single_arm": bool(t.is_single_arm),
             "trial_sponsor": t.sponsor,
             "trial_title": t.title,

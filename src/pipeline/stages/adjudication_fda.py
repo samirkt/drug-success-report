@@ -14,14 +14,15 @@ Outcome resolution (per Candidate):
   COMMERCIALIZED    -- indication matches an approved indication AND
                        currently marketed (active NDC records).
   FAILED_PHASE_3    -- highest_phase >= 3, no approval match, trials
-                       are stale. Uses `latest_completion_date` (fallback
-                       `earliest_start_date`) as a lower bound on
-                       recency — so the 2-year staleness window is
-                       conservative.
+                       are stale. Uses `latest_update_submitted_date`
+                       (the latest ClinicalTrials.gov submission across
+                       the candidate's trials) as the recency signal.
   FAILED_PHASE_2    -- highest_phase == 2, no approval match, stale.
-  FAILED_PHASE_1    -- highest_phase == 1, no approval match, stale.
-  ONGOING           -- no approval match AND trials still active within
-                       the failure window, OR phase is N/A / Unknown.
+  FAILED_PHASE_1    -- highest_phase == 1 (or N/A / Unknown), no
+                       approval match, stale or undated.
+  ONGOING           -- no approval match AND `latest_update_submitted_date`
+                       is within the failure window of `as_of`. A missing
+                       update date is treated as stale (failure).
   UNKNOWN           -- uncategorizable error (network, parse, etc.).
                        Matches the convention of the direct-LLM stage
                        so the funnel aggregator buckets errors

@@ -155,6 +155,7 @@ class TestCandidateParquetTypes:
         cand = _enriched_candidate(
             earliest_start_date=date(2018, 6, 1),
             latest_completion_date=date(2024, 3, 15),
+            latest_update_submitted_date=date(2025, 9, 20),
         )
         write_candidate_parquet(
             CandidateTable(candidates=[cand]),
@@ -173,6 +174,12 @@ class TestCandidateParquetTypes:
         else:
             start_d = start
         assert start_d == date(2018, 6, 1)
+
+        update = df["latest_update_submitted_date"].iloc[0]
+        assert not isinstance(update, str)
+        if hasattr(update, "date"):
+            update = update.date()
+        assert update == date(2025, 9, 20)
 
     def test_opentargets_moa_split(self, tmp_path):
         cands = [
@@ -323,6 +330,7 @@ class TestTrialParquet:
             status=TrialStatus.COMPLETED,
             start_date=date(2020, 1, 1),
             completion_date=date(2022, 6, 30),
+            last_update_submitted_date=date(2024, 5, 1),
             is_single_arm=True,
             mesh_condition_terms=["Diabetes Mellitus, Type 2"],
             mesh_condition_tree_numbers=["C18.452.394.750"],
@@ -348,6 +356,11 @@ class TestTrialParquet:
         if hasattr(ts, "date"):
             ts = ts.date()
         assert ts == date(2020, 1, 1)
+        last_update = matched["trial_last_update_submitted_date"]
+        assert not isinstance(last_update, str)
+        if hasattr(last_update, "date"):
+            last_update = last_update.date()
+        assert last_update == date(2024, 5, 1)
         assert matched["trial_is_single_arm"] in (True, 1)
 
     def test_no_trial_table_skips_write(self, tmp_path):

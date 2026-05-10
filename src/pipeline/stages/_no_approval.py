@@ -34,17 +34,22 @@ def classify_no_approval(
 ) -> CandidateOutcome:
     """Map a non-approval result to ONGOING / FAILED_PHASE_{1,2,3}.
 
-    Returns ONGOING when there are no trial dates, when the latest trial
-    activity is within the failure window, or when the highest phase is
-    N/A or Unknown. Otherwise returns FAILED_PHASE_<phase>; phase 4
-    candidates without an approval match are bucketed with phase 3.
+    Recency is judged from ``latest_update_submitted_date`` — the most
+    recent ClinicalTrials.gov submission across the candidate's trials —
+    which tracks any sponsor activity (status, results, protocol
+    amendments) rather than only completion. ONGOING is reserved for
+    candidates whose latest update is within ``failure_window_days`` of
+    ``as_of``; everything else (missing date or stale) is failure,
+    bucketed by ``highest_phase``. Phase 4 candidates without an approval
+    match bucket with phase 3; N/A / Unknown phases bucket with phase 1
+    as the most conservative "no evidence of advancement" choice.
     """
-    last_update = candidate.latest_completion_date or candidate.earliest_start_date
-    if last_update is None:
-        return CandidateOutcome.ONGOING
-
+    last_update = candidate.latest_update_submitted_date
     as_of = as_of or date.today()
-    if as_of - last_update < timedelta(days=failure_window_days):
+
+    if last_update is not None and as_of - last_update < timedelta(
+        days=failure_window_days
+    ):
         return CandidateOutcome.ONGOING
 
     phase = _phase_to_int(candidate.highest_phase)
@@ -52,6 +57,4 @@ def classify_no_approval(
         return CandidateOutcome.FAILED_PHASE_3
     if phase == 2:
         return CandidateOutcome.FAILED_PHASE_2
-    if phase == 1:
-        return CandidateOutcome.FAILED_PHASE_1
-    return CandidateOutcome.ONGOING
+    return CandidateOutcome.FAILED_PHASE_1

@@ -47,4 +47,9 @@ from . import killer_figure  # noqa: E402,F401
 # `target_only` is not in the BASELINES registry because it reuses
 # `train_one_run` directly rather than implementing the Baseline protocol.
 # `runner.run_baselines` dispatches to it by name.
-ALL_BASELINES: tuple[str, ...] = ("stratum", "tanimoto", "target_only", "killer_figure")
+ALL_BASELINES: tuple[str, ...] = (
+    "stratum",
+    "tanimoto",
+    "target_only",
+    #"killer_figure"
+)

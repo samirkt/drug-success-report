@@ -290,7 +290,7 @@ class TestAdjudicationStageRun:
                 mesh_indication="Obesity",
                 highest_phase=TrialPhase.PHASE_2,
                 trial_ids=["NCT77777777"],
-                latest_completion_date=recent,
+                latest_update_submitted_date=recent,
             ),
         ])
 

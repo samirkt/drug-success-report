@@ -24,6 +24,10 @@ from .models import TrialPValue
 
 logger = logging.getLogger(__name__)
 
+# Bump when the AACT SELECT projection changes so cached payloads from older
+# schemas don't bleed into runs that expect the new columns.
+_SCHEMA_VERSION = 2
+
 
 class AACTCache:
     """Pickle-backed cache of raw AACT fetch results."""
@@ -57,7 +61,13 @@ class AACTCache:
     @staticmethod
     def make_rows_key(source: str, filters: dict, max_trials: int | None) -> str:
         payload = json.dumps(
-            {"kind": "rows", "source": source, "filters": filters, "max_trials": max_trials},
+            {
+                "kind": "rows",
+                "schema_version": _SCHEMA_VERSION,
+                "source": source,
+                "filters": filters,
+                "max_trials": max_trials,
+            },
             sort_keys=True, default=str,
         )
         return hashlib.sha256(payload.encode()).hexdigest()

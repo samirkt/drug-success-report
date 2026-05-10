@@ -111,7 +111,6 @@ def train_one_run(
             time_split_column=config.time_split_column,
             time_split_year=config.time_split_year,
         )
-
     train_df = df.iloc[train_idx].reset_index(drop=True)
     test_df = df.iloc[test_idx].reset_index(drop=True)
     y_train = train_df["y"].values.astype(int)
@@ -206,7 +205,6 @@ def to_summary_row(name: str, result: RunResult) -> dict:
     return {
         "subset_name": name,
         "groups": ",".join(result.groups),
-        "n_features": result.n_features,
         "n_train": result.n_train,
         "n_test": result.n_test,
         "train_pos": result.train_pos,
@@ -217,6 +215,7 @@ def to_summary_row(name: str, result: RunResult) -> dict:
         "brier": m.get("brier"),
         "log_loss": m.get("log_loss"),
         "balanced_accuracy": m.get("balanced_accuracy"),
+        "n_features": result.n_features,
         "tp": m.get("tp"),
         "fp": m.get("fp"),
         "tn": m.get("tn"),

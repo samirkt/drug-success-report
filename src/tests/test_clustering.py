@@ -40,6 +40,7 @@ def _trial(
     sponsor="Co",
     start_date=None,
     completion_date=None,
+    last_update_submitted_date=None,
 ):
     return RawTrial(
         nct_id=nct_id,
@@ -51,6 +52,7 @@ def _trial(
         status=status,
         start_date=start_date,
         completion_date=completion_date,
+        last_update_submitted_date=last_update_submitted_date,
         mesh_intervention_terms=mesh_interventions or [],
         mesh_condition_terms=mesh_conditions or [],
     )
@@ -523,6 +525,29 @@ class TestBuildCandidate:
         result = stage._build_candidate("x", trials)
         assert result.earliest_start_date is None
         assert result.latest_completion_date is None
+        assert result.latest_update_submitted_date is None
+
+    def test_latest_update_submitted_date_takes_max_across_cluster(self):
+        trials = [
+            _trial(
+                "NCT001",
+                "DrugA",
+                last_update_submitted_date=date(2022, 5, 1),
+            ),
+            _trial(
+                "NCT002",
+                "DrugA",
+                last_update_submitted_date=date(2024, 1, 15),
+            ),
+            _trial(
+                "NCT003",
+                "DrugA",
+                last_update_submitted_date=None,
+            ),
+        ]
+        stage = CandidateClusteringStage()
+        result = stage._build_candidate("x", trials)
+        assert result.latest_update_submitted_date == date(2024, 1, 15)
 
     def test_mesh_drug_picks_most_common_leaf(self):
         trials = [

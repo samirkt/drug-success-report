@@ -119,6 +119,9 @@ def _candidate(
     phase=TrialPhase.PHASE_3,
     latest=date(2020, 1, 1),
 ):
+    # `latest` feeds the no-approval recency calc, which now keys off
+    # `latest_update_submitted_date`. Keep the kwarg name for caller
+    # readability but route it to the new field.
     return Candidate(
         candidate_id=cid,
         drug_name=drug,
@@ -128,7 +131,7 @@ def _candidate(
         mesh_drug=mesh_drug,
         drugbank_id=drugbank_id,
         highest_phase=phase,
-        latest_completion_date=latest,
+        latest_update_submitted_date=latest,
     )
 
 

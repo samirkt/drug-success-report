@@ -80,6 +80,7 @@ class RawTrial:
     raw_data: dict = field(default_factory=dict)
     start_date: date | None = None
     completion_date: date | None = None
+    last_update_submitted_date: date | None = None
     is_single_arm: bool = False
     primary_p_values: list[TrialPValue] = field(default_factory=list)
     mesh_condition_terms: list[str] = field(default_factory=list)
@@ -116,6 +117,7 @@ class Candidate:
     sponsors: list[str] = field(default_factory=list)
     earliest_start_date: date | None = None
     latest_completion_date: date | None = None
+    latest_update_submitted_date: date | None = None
     drug_name_raw: str = ""          # original intervention string from AACT (used for LLM prompts)
     drugbank_id: Optional[str] = None  # matched DrugBank primary ID; None if unmatched
     mesh_indication: Optional[str] = None  # canonical MeSH condition term used in dedup

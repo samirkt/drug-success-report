@@ -562,6 +562,7 @@ class TestNormalizeDates:
             "overall_status": "Completed",
             "start_date": date(2020, 1, 1),
             "completion_date": date(2022, 12, 31),
+            "last_update_submitted_date": date(2024, 6, 15),
         }
         base.update(overrides)
         return base
@@ -576,6 +577,13 @@ class TestNormalizeDates:
         result = stage._normalize(self._aact_row(completion_date=date(2022, 12, 31)))
         assert result.completion_date == date(2022, 12, 31)
 
+    def test_normalize_maps_last_update_submitted_date(self):
+        stage = TrialIngestionStage()
+        result = stage._normalize(
+            self._aact_row(last_update_submitted_date=date(2024, 6, 15))
+        )
+        assert result.last_update_submitted_date == date(2024, 6, 15)
+
     def test_normalize_null_start_date_is_none(self):
         stage = TrialIngestionStage()
         result = stage._normalize(self._aact_row(start_date=None))
@@ -585,6 +593,11 @@ class TestNormalizeDates:
         stage = TrialIngestionStage()
         result = stage._normalize(self._aact_row(completion_date=None))
         assert result.completion_date is None
+
+    def test_normalize_null_last_update_submitted_date_is_none(self):
+        stage = TrialIngestionStage()
+        result = stage._normalize(self._aact_row(last_update_submitted_date=None))
+        assert result.last_update_submitted_date is None
 
     def test_normalize_missing_date_keys_defaults_to_none(self):
         stage = TrialIngestionStage()
@@ -600,6 +613,7 @@ class TestNormalizeDates:
         result = stage._normalize(row)
         assert result.start_date is None
         assert result.completion_date is None
+        assert result.last_update_submitted_date is None
 
 
 # ---------------------------------------------------------------------------

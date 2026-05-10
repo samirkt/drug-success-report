@@ -113,7 +113,6 @@ def _summary_row(
     return {
         "subset_name": name,
         "groups": groups,
-        "n_features": n_features,
         "n_train": int(len(y_train)),
         "n_test": int(len(y_test)),
         "train_pos": int(y_train.sum()),
@@ -124,6 +123,7 @@ def _summary_row(
         "brier": metrics_dict.get("brier"),
         "log_loss": metrics_dict.get("log_loss"),
         "balanced_accuracy": metrics_dict.get("balanced_accuracy"),
+        "n_features": n_features,
         "tp": metrics_dict.get("tp"),
         "fp": metrics_dict.get("fp"),
         "tn": metrics_dict.get("tn"),

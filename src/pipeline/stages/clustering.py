@@ -276,8 +276,14 @@ class CandidateClusteringStage:
         highest_phase = max(trials, key=lambda t: PHASE_ORDER.index(t.phase)).phase
         start_dates = [t.start_date for t in trials if t.start_date is not None]
         end_dates = [t.completion_date for t in trials if t.completion_date is not None]
+        update_dates = [
+            t.last_update_submitted_date
+            for t in trials
+            if t.last_update_submitted_date is not None
+        ]
         earliest_start_date = min(start_dates) if start_dates else None
         latest_completion_date = max(end_dates) if end_dates else None
+        latest_update_submitted_date = max(update_dates) if update_dates else None
         single_arm_p_values = [
             dataclasses.replace(pv, phase=t.phase)
             for t in trials
@@ -310,6 +316,7 @@ class CandidateClusteringStage:
             sponsors=sponsors,
             earliest_start_date=earliest_start_date,
             latest_completion_date=latest_completion_date,
+            latest_update_submitted_date=latest_update_submitted_date,
             drug_name_raw=drug_name_raw,
             drugbank_id=drugbank_id,
             single_arm_p_values=single_arm_p_values,
