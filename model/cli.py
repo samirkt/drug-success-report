@@ -10,6 +10,8 @@ from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 
+import pandas as pd
+
 from .ablate import run_ablation
 from .artifacts import save_run
 from .baselines import ALL_BASELINES
@@ -84,6 +86,20 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
         help="Column used for the temporal split (default: earliest_start_date).",
     )
     p.add_argument(
+        "--calibration-year",
+        type=int,
+        default=None,
+        help="If set, fits a probability calibrator on rows in this year and uses "
+             "a three-way time slice: train <= Y-1, calibrate == Y, test > Y. "
+             "Takes precedence over --time-split-year.",
+    )
+    p.add_argument(
+        "--calibration-method",
+        default="isotonic",
+        choices=("isotonic", "sigmoid"),
+        help="Calibration method when --calibration-year is set (default: isotonic).",
+    )
+    p.add_argument(
         "--groups",
         default=",".join(ALL_FEATURE_GROUPS),
         help=f"Comma-separated feature groups. Available: {','.join(ALL_FEATURE_GROUPS)}",
@@ -133,6 +149,14 @@ def _build_config(args: argparse.Namespace) -> ModelingConfig:
         top_k_pathways=args.top_k_pathways,
         top_k_mesh=args.top_k_mesh,
     )
+    time_split_year = args.time_split_year
+    if args.calibration_year is not None and time_split_year is not None:
+        import warnings as _w
+        _w.warn(
+            "--calibration-year takes precedence over --time-split-year; the latter will be ignored",
+            stacklevel=2,
+        )
+        time_split_year = None
     return ModelingConfig(
         candidate_detail_path=args.candidate_detail,
         fingerprints_path=args.fingerprints,
@@ -145,7 +169,9 @@ def _build_config(args: argparse.Namespace) -> ModelingConfig:
         seed=args.seed,
         group_by=args.group_by,
         time_split_column=args.time_split_column,
-        time_split_year=args.time_split_year,
+        time_split_year=time_split_year,
+        calibration_year=args.calibration_year,
+        calibration_method=args.calibration_method,
         output_dir=args.output,
     )
 
@@ -254,6 +280,39 @@ def _cmd_ablate(args: argparse.Namespace) -> None:
     print(result.summary.to_string(index=False))
 
 
+def _cmd_rfe(args: argparse.Namespace) -> None:
+    from .rfe import RFEConfig, run_group_rfe, save_rfe
+
+    config = _build_config(args)
+    rfe_cfg = RFEConfig(
+        base=config,
+        metric=args.rfe_metric,
+        cv=args.rfe_cv,
+        step=args.rfe_step,
+        seed=args.seed,
+    )
+    summary, final_result = run_group_rfe(rfe_cfg)
+    save_rfe(summary, final_result, Path(args.output))
+
+    rows = [
+        {
+            "iter": s.iteration,
+            "n_groups": len(s.groups_remaining),
+            "groups_remaining": ", ".join(s.groups_remaining),
+            "group_dropped": s.group_dropped or "—",
+            "dropped_importance": round(s.dropped_importance, 6),
+            args.rfe_metric: round(s.metric_value, 4),
+            f"{args.rfe_metric}_std": round(s.metric_value_std, 4),
+        }
+        for s in summary.history
+    ]
+    print(pd.DataFrame(rows).to_string(index=False))
+    print(
+        f"\noptimal subset (iter={summary.optimal_iteration}): "
+        f"{list(summary.optimal_groups)}  {args.rfe_metric}={summary.optimal_metric:.4f}"
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="model")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -276,6 +335,32 @@ def _build_parser() -> argparse.ArgumentParser:
         help="For --mode=custom: name=g1,g2,... ; pass repeatedly.",
     )
     p_abl.set_defaults(func=_cmd_ablate)
+
+    p_rfe = sub.add_parser(
+        "rfe",
+        help="Group-level recursive feature elimination across enabled feature groups.",
+    )
+    _add_common_args(p_rfe)
+    p_rfe.add_argument(
+        "--rfe-metric",
+        default="roc_auc",
+        choices=("roc_auc", "pr_auc", "f1", "brier", "log_loss"),
+        help="Metric used to score each RFE iteration (default: roc_auc).",
+    )
+    p_rfe.add_argument(
+        "--rfe-cv",
+        type=int,
+        default=0,
+        help="0 = single train/test split using the base config; "
+             ">=2 = stratified K-fold over the train portion.",
+    )
+    p_rfe.add_argument(
+        "--rfe-step",
+        type=int,
+        default=1,
+        help="Number of groups removed per iteration (default: 1).",
+    )
+    p_rfe.set_defaults(func=_cmd_rfe)
 
     p_bl = sub.add_parser(
         "baselines",

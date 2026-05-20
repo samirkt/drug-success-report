@@ -35,7 +35,7 @@ def _json_default(o: Any) -> Any:
     raise TypeError(f"not JSON serializable: {type(o)}")
 
 
-def save_run(result: RunResult, output_dir: Path) -> Path:
+def save_run(result: RunResult, output_dir: Path, *, write_report: bool = True) -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,9 +44,12 @@ def save_run(result: RunResult, output_dir: Path) -> Path:
         "n_features": result.n_features,
         "n_train": result.n_train,
         "n_test": result.n_test,
+        "n_calib": result.n_calib,
         "train_pos": result.train_pos,
         "test_pos": result.test_pos,
+        "calib_pos": result.calib_pos,
         "metrics": result.metrics,
+        "calibration": result.calibration_metrics or None,
         "config": result.config,
     }
     (output_dir / "metrics.json").write_text(
@@ -69,10 +72,19 @@ def save_run(result: RunResult, output_dir: Path) -> Path:
             {
                 "fitted_groups": result.fitted_groups,
                 "fitted_model": result.fitted_model,
+                "calibrator": result.calibrator,
                 "feature_names": result.feature_names,
                 "label_config": result.config.label,
             },
             f,
         )
+
+    if write_report:
+        try:
+            from .report import write_run_report
+            write_run_report(result, output_dir / "report.pdf")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("report.pdf generation failed: %s", exc)
+
     logger.info("artifacts saved to %s", output_dir)
     return output_dir

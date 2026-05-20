@@ -5,6 +5,53 @@ from __future__ import annotations
 import numpy as np
 
 
+def reliability_curve(y_true, y_proba, n_bins: int = 10) -> dict:
+    """Equal-width reliability bins on [0, 1].
+
+    Returns a dict with `bin_edges`, `bin_centers`, `bin_count`, `mean_pred`,
+    `frac_pos`. Empty bins have NaN for mean_pred / frac_pos.
+    """
+    y_true = np.asarray(y_true).astype(int)
+    y_proba = np.clip(np.asarray(y_proba).astype(float), 0.0, 1.0)
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    # Right-closed bin assignment with explicit handling for the upper edge.
+    bin_idx = np.digitize(y_proba, edges[1:-1], right=False)
+    counts = np.zeros(n_bins, dtype=np.int64)
+    mean_pred = np.full(n_bins, np.nan, dtype=np.float64)
+    frac_pos = np.full(n_bins, np.nan, dtype=np.float64)
+    for b in range(n_bins):
+        mask = bin_idx == b
+        c = int(mask.sum())
+        counts[b] = c
+        if c > 0:
+            mean_pred[b] = float(y_proba[mask].mean())
+            frac_pos[b] = float(y_true[mask].mean())
+    return {
+        "bin_edges": edges,
+        "bin_centers": centers,
+        "bin_count": counts,
+        "mean_pred": mean_pred,
+        "frac_pos": frac_pos,
+    }
+
+
+def expected_calibration_error(y_true, y_proba, n_bins: int = 10) -> float:
+    """Sample-weighted mean absolute gap between mean predicted prob and
+    observed positive rate per bin. Empty bins are excluded.
+    """
+    rc = reliability_curve(y_true, y_proba, n_bins=n_bins)
+    counts = rc["bin_count"]
+    total = int(counts.sum())
+    if total == 0:
+        return float("nan")
+    gaps = np.abs(rc["mean_pred"] - rc["frac_pos"])
+    valid = counts > 0
+    if not valid.any():
+        return float("nan")
+    return float(np.sum(counts[valid] * gaps[valid]) / total)
+
+
 def metrics(y_true, y_proba, *, threshold: float = 0.5) -> dict:
     from sklearn.metrics import (
         average_precision_score,

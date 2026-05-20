@@ -77,6 +77,13 @@ class ModelingConfig:
     time_split_column: str = "earliest_start_date"
     time_split_year: Optional[int] = None
 
+    # When set, carves out a calibration slice as a three-way time slice:
+    # train = year <= calibration_year-1, calibrate = year == calibration_year,
+    # test = year > calibration_year. The calibrator is fit on the calibrate
+    # slice after the base model is trained on the train slice.
+    calibration_year: Optional[int] = None
+    calibration_method: str = "isotonic"  # "isotonic" | "sigmoid"
+
     output_dir: Optional[Path] = None
 
 

@@ -36,9 +36,13 @@ class RunResult:
     test_pos: int
     metrics: dict
     feature_importances: Optional[np.ndarray] = None
-    test_predictions: Optional[pd.DataFrame] = None  # candidate_id, y_true, y_proba
+    test_predictions: Optional[pd.DataFrame] = None  # candidate_id, y_true, y_proba [, y_proba_calibrated]
     fitted_groups: list[FeatureGroup] = field(default_factory=list)
     fitted_model: object = None  # ModelProtocol
+    calibrator: object = None  # IsotonicRegression / LogisticRegression / None
+    calibration_metrics: dict = field(default_factory=dict)
+    n_calib: int = 0
+    calib_pos: int = 0
 
 
 def _instantiate_groups(config: ModelingConfig) -> list[FeatureGroup]:
@@ -87,12 +91,17 @@ def train_one_run(
     df: Optional[pd.DataFrame] = None,
     train_idx: Optional[np.ndarray] = None,
     test_idx: Optional[np.ndarray] = None,
+    calib_idx: Optional[np.ndarray] = None,
 ) -> RunResult:
     """Run one full train/eval cycle.
 
-    `df`, `train_idx`, `test_idx` are optional escape hatches that the
-    ablation harness uses to fix the split across subsets. When omitted,
-    data is loaded fresh and split per `config`.
+    `df`, `train_idx`, `test_idx`, `calib_idx` are optional escape hatches
+    that the ablation / RFE harnesses use to fix the split across subsets.
+    When omitted, data is loaded fresh and split per `config`.
+
+    Calibration: when `config.calibration_year` is set (and `calib_idx` is
+    not explicitly passed), a three-way temporal split is taken so the
+    calibrator can be fit on a held-out year disjoint from train/val/test.
     """
     if not config.features.enabled:
         raise ValueError("config.features.enabled is empty — nothing to train on")
@@ -103,18 +112,31 @@ def train_one_run(
     if df is None:
         df = data_mod.build_modeling_frame(config)
     if train_idx is None or test_idx is None:
-        train_idx, test_idx = splits.split(
-            df,
-            test_size=config.test_size,
-            seed=config.seed,
-            group_by=config.group_by,
-            time_split_column=config.time_split_column,
-            time_split_year=config.time_split_year,
-        )
+        if config.calibration_year is not None:
+            train_idx, calib_idx, test_idx = splits.split_with_calibration(
+                df,
+                calibration_year=config.calibration_year,
+                time_split_column=config.time_split_column,
+            )
+        else:
+            train_idx, test_idx = splits.split(
+                df,
+                test_size=config.test_size,
+                seed=config.seed,
+                group_by=config.group_by,
+                time_split_column=config.time_split_column,
+                time_split_year=config.time_split_year,
+            )
     train_df = df.iloc[train_idx].reset_index(drop=True)
     test_df = df.iloc[test_idx].reset_index(drop=True)
     y_train = train_df["y"].values.astype(int)
     y_test = test_df["y"].values.astype(int)
+    calib_df = (
+        df.iloc[calib_idx].reset_index(drop=True)
+        if calib_idx is not None and len(calib_idx) > 0
+        else None
+    )
+    y_calib = calib_df["y"].values.astype(int) if calib_df is not None else None
 
     # Inner-val slice (off training set) for early stopping.
     from sklearn.model_selection import train_test_split
@@ -136,6 +158,7 @@ def train_one_run(
     feat_train: list[np.ndarray] = []
     feat_val: list[np.ndarray] = []
     feat_test: list[np.ndarray] = []
+    feat_calib: list[np.ndarray] = []
     feature_names: list[str] = []
     group_widths: list[tuple[str, int]] = []
     for g in groups:
@@ -146,6 +169,8 @@ def train_one_run(
         feat_train.append(m_train)
         feat_val.append(m_val)
         feat_test.append(m_test)
+        if calib_df is not None:
+            feat_calib.append(g.transform(calib_df))
         names = g.feature_names()
         feature_names.extend(names)
         group_widths.append((g.name, m_train.shape[1]))
@@ -154,8 +179,15 @@ def train_one_run(
     X_train = _stack(feat_train)
     X_val = _stack(feat_val)
     X_test = _stack(feat_test)
+    X_calib = _stack(feat_calib) if calib_df is not None else None
     n_features = X_train.shape[1]
-    logger.info("assembled feature matrix: train=%s val=%s test=%s", X_train.shape, X_val.shape, X_test.shape)
+    logger.info(
+        "assembled feature matrix: train=%s val=%s test=%s%s",
+        X_train.shape,
+        X_val.shape,
+        X_test.shape,
+        f" calib={X_calib.shape}" if X_calib is not None else "",
+    )
 
     # Build + fit model.
     n_pos = int(y_inner.sum())
@@ -172,12 +204,67 @@ def train_one_run(
     y_proba = model.predict_proba(X_test)[:, 1]
     m = evaluate.metrics(y_test, y_proba)
 
+    # Optional probability calibration on the held-out year slice.
+    calibrator = None
+    y_proba_calibrated = None
+    calibration_metrics: dict = {}
+    if X_calib is not None and y_calib is not None and len(y_calib) > 0:
+        raw_calib = model.predict_proba(X_calib)[:, 1]
+        method = (config.calibration_method or "isotonic").lower()
+        if method == "isotonic":
+            from sklearn.isotonic import IsotonicRegression
+            calibrator = IsotonicRegression(out_of_bounds="clip")
+            calibrator.fit(raw_calib, y_calib)
+            y_proba_calibrated = calibrator.predict(y_proba)
+        elif method == "sigmoid":
+            from sklearn.linear_model import LogisticRegression
+            calibrator = LogisticRegression()
+            calibrator.fit(raw_calib.reshape(-1, 1), y_calib)
+            y_proba_calibrated = calibrator.predict_proba(y_proba.reshape(-1, 1))[:, 1]
+        else:
+            raise ValueError(f"unknown calibration_method: {config.calibration_method!r}")
+        y_proba_calibrated = np.clip(np.asarray(y_proba_calibrated), 0.0, 1.0)
+        m_cal = evaluate.metrics(y_test, y_proba_calibrated)
+        ece_pre = evaluate.expected_calibration_error(y_test, y_proba)
+        ece_post = evaluate.expected_calibration_error(y_test, y_proba_calibrated)
+        calibration_metrics = {
+            "method": method,
+            "calibration_year": config.calibration_year,
+            "n_calib": int(len(y_calib)),
+            "calib_pos": int(y_calib.sum()),
+            "pre": {
+                "brier": m["brier"],
+                "log_loss": m["log_loss"],
+                "ece": ece_pre,
+            },
+            "post": {
+                "roc_auc": m_cal["roc_auc"],
+                "pr_auc": m_cal["pr_auc"],
+                "f1": m_cal["f1"],
+                "brier": m_cal["brier"],
+                "log_loss": m_cal["log_loss"],
+                "ece": ece_post,
+                "balanced_accuracy": m_cal["balanced_accuracy"],
+                "tp": m_cal["tp"], "fp": m_cal["fp"], "tn": m_cal["tn"], "fn": m_cal["fn"],
+            },
+        }
+        logger.info(
+            "calibration (%s): n_calib=%d  Brier %.4f→%.4f  logloss %.4f→%.4f  ECE %.4f→%.4f",
+            method, len(y_calib),
+            m["brier"], m_cal["brier"],
+            m["log_loss"], m_cal["log_loss"],
+            ece_pre, ece_post,
+        )
+
     # Predictions table for downstream inspection.
-    pred_df = pd.DataFrame({
+    pred_cols = {
         "candidate_id": test_df["candidate_id"].values,
         "y_true": y_test,
         "y_proba": y_proba,
-    })
+    }
+    if y_proba_calibrated is not None:
+        pred_cols["y_proba_calibrated"] = y_proba_calibrated
+    pred_df = pd.DataFrame(pred_cols)
 
     # Annotate feature importances by group.
     fi = model.feature_importances()
@@ -196,6 +283,10 @@ def train_one_run(
         test_predictions=pred_df,
         fitted_groups=groups,
         fitted_model=model,
+        calibrator=calibrator,
+        calibration_metrics=calibration_metrics,
+        n_calib=int(len(y_calib)) if y_calib is not None else 0,
+        calib_pos=int(y_calib.sum()) if y_calib is not None else 0,
     )
 
 

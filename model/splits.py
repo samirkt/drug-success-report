@@ -116,3 +116,52 @@ def split(
     if overlap:
         logger.warning("split: %d overlapping groups (sklearn issue) — review", len(overlap))
     return train_idx, test_idx
+
+
+def split_with_calibration(
+    df: pd.DataFrame,
+    *,
+    calibration_year: int,
+    time_split_column: str = "earliest_start_date",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return (train_idx, calib_idx, test_idx) for a three-way temporal slice.
+
+    train = year <= calibration_year - 1
+    calibrate = year == calibration_year
+    test = year > calibration_year
+    Rows with a missing year are skipped from all three slices.
+    """
+    if not time_split_column or time_split_column not in df.columns:
+        raise ValueError(f"time_split_column={time_split_column!r} not in DataFrame")
+    y = df["y"].values
+    years = df[time_split_column].apply(_year_of).values
+    train_mask = np.array([yr is not None and yr <= calibration_year - 1 for yr in years])
+    calib_mask = np.array([yr is not None and yr == calibration_year for yr in years])
+    test_mask = np.array([yr is not None and yr > calibration_year for yr in years])
+    n_skip = len(df) - train_mask.sum() - calib_mask.sum() - test_mask.sum()
+    train_idx = np.flatnonzero(train_mask)
+    calib_idx = np.flatnonzero(calib_mask)
+    test_idx = np.flatnonzero(test_mask)
+    logger.info(
+        "split: 3-way temporal on %s; calibration_year=%d; "
+        "train=%d (pos=%d, %.1f%%) calib=%d (pos=%d, %.1f%%) test=%d (pos=%d, %.1f%%) skipped_no_year=%d",
+        time_split_column,
+        calibration_year,
+        len(train_idx),
+        int(y[train_idx].sum()),
+        100.0 * y[train_idx].mean() if len(train_idx) else 0.0,
+        len(calib_idx),
+        int(y[calib_idx].sum()),
+        100.0 * y[calib_idx].mean() if len(calib_idx) else 0.0,
+        len(test_idx),
+        int(y[test_idx].sum()),
+        100.0 * y[test_idx].mean() if len(test_idx) else 0.0,
+        n_skip,
+    )
+    if len(train_idx) == 0 or len(calib_idx) == 0 or len(test_idx) == 0:
+        raise ValueError(
+            f"3-way temporal split with calibration_year={calibration_year} produced empty slice — "
+            f"train={len(train_idx)} calib={len(calib_idx)} test={len(test_idx)}; "
+            f"check the year distribution of {time_split_column}"
+        )
+    return train_idx, calib_idx, test_idx
