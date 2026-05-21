@@ -56,6 +56,8 @@ def _instantiate_groups(config: ModelingConfig) -> list[FeatureGroup]:
             out.append(build_group(name, top_k=fc.top_k_pathways))
         elif name == "disease":
             out.append(build_group(name, top_k_mesh=fc.top_k_mesh))
+        elif name == "moa":
+            out.append(build_group(name, top_k=fc.top_k_moa))
         elif name == "admet":
             out.append(
                 build_group(

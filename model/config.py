@@ -24,6 +24,8 @@ ALL_FEATURE_GROUPS: tuple[str, ...] = (
     "admet",
     "pathway",
     "disease",
+    "action_type",
+    "moa",
 )
 
 
@@ -48,6 +50,7 @@ class FeatureConfig:
     top_k_targets: int = 200
     top_k_pathways: int = 500
     top_k_mesh: int = 200
+    top_k_moa: int = 200
     admet_drop_null_threshold: float = 0.95
     admet_indicator_threshold: float = 0.05
 

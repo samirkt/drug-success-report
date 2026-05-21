@@ -107,6 +107,7 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--top-k-targets", type=int, default=200)
     p.add_argument("--top-k-pathways", type=int, default=500)
     p.add_argument("--top-k-mesh", type=int, default=200)
+    p.add_argument("--top-k-moa", type=int, default=200)
     p.add_argument(
         "--label-positive",
         default="Approved,Commercialized",
@@ -148,6 +149,7 @@ def _build_config(args: argparse.Namespace) -> ModelingConfig:
         top_k_targets=args.top_k_targets,
         top_k_pathways=args.top_k_pathways,
         top_k_mesh=args.top_k_mesh,
+        top_k_moa=args.top_k_moa,
     )
     time_split_year = args.time_split_year
     if args.calibration_year is not None and time_split_year is not None:
