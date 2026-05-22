@@ -155,6 +155,22 @@ class Candidate:
     reactome_pathway_names: list[str] = field(default_factory=list)
     reactome_n_pathways: Optional[int] = None
     reactome_has_data: Optional[bool] = None
+    # Hierarchy-aware diagnostics derived from `pathway_hierarchy.parquet`.
+    # `n_leaf_pathways` counts pathways in the candidate's set with no
+    # *child* also present in the set ("locally leaf") — the more useful
+    # diagnostic since the source file is ancestry-expanded. `n_leaf_global`
+    # uses the Reactome-wide leaf flag as a sanity check. `mean_depth` /
+    # `max_depth` summarize `depth_from_top` over the candidate's pathways.
+    # `top_level_pathway_ids` is the sorted union of root ancestors;
+    # `leaf_pathway_ids` is the sorted list of locally-leaf pathway IDs.
+    reactome_n_top_level_pathways: Optional[int] = None
+    reactome_n_leaf_pathways: Optional[int] = None
+    reactome_n_leaf_global: Optional[int] = None
+    reactome_n_internal_pathways: Optional[int] = None
+    reactome_mean_depth: Optional[float] = None
+    reactome_max_depth: Optional[int] = None
+    reactome_top_level_pathway_ids: list[str] = field(default_factory=list)
+    reactome_leaf_pathway_ids: list[str] = field(default_factory=list)
     # ADMET — predicted from canonical SMILES via admet_ai (52 raw
     # properties + 52 DrugBank-approved-percentile siblings). Names
     # mirror admet_ai's column tuple in `pipeline.admet.admet_columns`

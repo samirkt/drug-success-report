@@ -20,9 +20,10 @@ from __future__ import annotations
 import logging
 import statistics
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..models import CandidateTable
+from .reactome_hierarchy import load_hierarchy
 
 if TYPE_CHECKING:
     from ..pipeline import PipelineConfig
@@ -51,6 +52,8 @@ class ReactomeEnrichment:
     def __init__(self) -> None:
         # {uniprot_accession: list[(pathway_id, pathway_name)]}
         self._lookup: dict[str, list[tuple[str, str]]] | None = None
+        # {pathway_id: {depth, parents, children, top_level_ids, is_leaf, name}}
+        self._hierarchy: dict[str, dict[str, Any]] | None = None
         self._data_dir: Path | None = None
         self._version: Optional[str] = None
 
@@ -115,6 +118,25 @@ class ReactomeEnrichment:
             "ReactomeEnrichment: loaded %d UniProt → pathway entries (Reactome v%s)",
             len(self._lookup), self._version or "?",
         )
+
+        try:
+            self._hierarchy = load_hierarchy(self._data_dir)
+            logger.info(
+                "ReactomeEnrichment: loaded hierarchy with %d pathways "
+                "(roots=%d, leaves=%d)",
+                len(self._hierarchy),
+                sum(1 for v in self._hierarchy.values() if v["depth"] == 0),
+                sum(1 for v in self._hierarchy.values() if v["is_leaf"]),
+            )
+        except FileNotFoundError as e:
+            logger.warning(
+                "ReactomeEnrichment: hierarchy unavailable (%s); "
+                "diagnostics will be skipped. Run data/reactome/download.sh "
+                "to fetch ReactomePathwaysRelation.txt.",
+                e,
+            )
+            self._hierarchy = None
+
         self._sanity_check()
         return self._lookup
 
@@ -129,6 +151,71 @@ class ReactomeEnrichment:
                     "expected >= %d. Check UniProt ID format in source file.",
                     label, uni, n, minimum,
                 )
+        # Hierarchy spot-check: EGFR (P00533) should pull in pathways whose
+        # root-ancestor set contains Signal Transduction (R-HSA-162582).
+        if self._hierarchy is not None:
+            egfr_pids = [pid for pid, _ in self._lookup.get("P00533", [])]
+            if egfr_pids:
+                roots: set[str] = set()
+                for pid in egfr_pids:
+                    info = self._hierarchy.get(pid)
+                    if info is not None:
+                        roots.update(info["top_level_ids"])
+                if "R-HSA-162582" not in roots:
+                    logger.warning(
+                        "ReactomeEnrichment: hierarchy spot-check fail — "
+                        "EGFR pathways do not roll up to Signal Transduction "
+                        "(R-HSA-162582). Pathway/relation files may be out of sync.",
+                    )
+
+    def _apply_hierarchy_diagnostics(
+        self, cand: Any, pathway_ids: list[str]
+    ) -> int:
+        """Populate hierarchy-aware diagnostic fields on a candidate.
+
+        Returns the count of pathway IDs that were absent from the
+        hierarchy lookup (used for coverage warnings).
+        """
+        assert self._hierarchy is not None
+        pid_set = set(pathway_ids)
+        depths: list[int] = []
+        n_top = 0
+        roots: set[str] = set()
+        # "Locally leaf": a pathway in the set whose children (per the
+        # global hierarchy) do not appear in the same set. This is what
+        # tells us whether n_pathways=20 is "deep one branch" vs "broad".
+        local_leaves: list[str] = []
+        n_global_leaf = 0
+        missing = 0
+        for pid in pathway_ids:
+            info = self._hierarchy.get(pid)
+            if info is None:
+                missing += 1
+                continue
+            depth = info["depth"]
+            if depth >= 0:
+                depths.append(depth)
+            if depth == 0:
+                n_top += 1
+            roots.update(info["top_level_ids"])
+            if info["is_leaf"]:
+                n_global_leaf += 1
+            if not any(child in pid_set for child in info["children"]):
+                local_leaves.append(pid)
+
+        cand.reactome_n_top_level_pathways = n_top
+        cand.reactome_n_leaf_pathways = len(local_leaves)
+        cand.reactome_n_leaf_global = n_global_leaf
+        cand.reactome_n_internal_pathways = max(
+            0, len(pathway_ids) - n_top - len(local_leaves)
+        )
+        cand.reactome_mean_depth = (
+            float(statistics.mean(depths)) if depths else None
+        )
+        cand.reactome_max_depth = max(depths) if depths else None
+        cand.reactome_top_level_pathway_ids = sorted(roots)
+        cand.reactome_leaf_pathway_ids = sorted(local_leaves)
+        return missing
 
     def run(
         self,
@@ -141,6 +228,8 @@ class ReactomeEnrichment:
         enriched = 0
         n_pathway_distribution: list[int] = []
 
+        missing_from_hierarchy = 0
+        total_with_pathways = 0
         for cand in candidates.candidates:
             if not cand.drug_targets:
                 cand.reactome_has_data = False
@@ -157,8 +246,28 @@ class ReactomeEnrichment:
                 cand.reactome_has_data = True
                 enriched += 1
                 n_pathway_distribution.append(len(items))
+                if self._hierarchy is not None:
+                    miss = self._apply_hierarchy_diagnostics(
+                        cand, cand.reactome_pathway_ids
+                    )
+                    missing_from_hierarchy += miss
+                    total_with_pathways += len(cand.reactome_pathway_ids)
             else:
                 cand.reactome_has_data = False
+
+        if (
+            self._hierarchy is not None
+            and total_with_pathways > 0
+            and missing_from_hierarchy / total_with_pathways > 0.05
+        ):
+            logger.warning(
+                "ReactomeEnrichment: %d/%d (%.1f%%) candidate pathway IDs "
+                "missing from hierarchy — likely version drift between "
+                "UniProt2Reactome_All_Levels.txt and ReactomePathways*.txt.",
+                missing_from_hierarchy,
+                total_with_pathways,
+                100.0 * missing_from_hierarchy / total_with_pathways,
+            )
 
         pct = (100.0 * enriched / total) if total > 0 else 0.0
         logger.info(
