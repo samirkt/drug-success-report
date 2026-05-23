@@ -52,6 +52,45 @@ def expected_calibration_error(y_true, y_proba, n_bins: int = 10) -> float:
     return float(np.sum(counts[valid] * gaps[valid]) / total)
 
 
+# Trial phases that map to a phase-success transition. Keyed by the
+# string value of `TrialPhase` as written to `trial_detail.parquet`.
+PHASE_TRANSITIONS: dict[str, str] = {
+    "Phase 1": "P1->P2",
+    "Phase 2": "P2->P3",
+    "Phase 3": "P3->approval",
+}
+
+
+def metrics_by_phase(
+    y_true,
+    y_proba,
+    trial_phase,
+    *,
+    threshold: float = 0.5,
+) -> dict:
+    """Per-phase metrics for trial-level runs.
+
+    Slices `(y_true, y_proba)` by `trial_phase` value into the three
+    phase-transition cohorts (P1->P2 / P2->P3 / P3->approval) and returns
+    a dict mapping the transition label to its full metrics dict from
+    :func:`metrics`. Cohorts with no rows are returned as `{"n": 0}`.
+    """
+    phases = np.asarray(trial_phase)
+    y_true_arr = np.asarray(y_true).astype(int)
+    y_proba_arr = np.asarray(y_proba).astype(float)
+    out: dict = {}
+    for phase_value, label in PHASE_TRANSITIONS.items():
+        mask = phases == phase_value
+        n = int(mask.sum())
+        if n == 0:
+            out[label] = {"n": 0, "n_pos": 0, "n_neg": 0}
+            continue
+        out[label] = metrics(
+            y_true_arr[mask], y_proba_arr[mask], threshold=threshold
+        )
+    return out
+
+
 def metrics(y_true, y_proba, *, threshold: float = 0.5) -> dict:
     from sklearn.metrics import (
         average_precision_score,

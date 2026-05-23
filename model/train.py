@@ -43,6 +43,10 @@ class RunResult:
     calibration_metrics: dict = field(default_factory=dict)
     n_calib: int = 0
     calib_pos: int = 0
+    # Per-phase test-set metrics for trial-granularity runs. Empty dict
+    # for drug-indication runs (no `trial_phase` column).
+    per_phase_metrics: dict = field(default_factory=dict)
+    per_phase_metrics_calibrated: dict = field(default_factory=dict)
 
 
 def _instantiate_groups(config: ModelingConfig) -> list[FeatureGroup]:
@@ -206,10 +210,28 @@ def train_one_run(
     y_proba = model.predict_proba(X_test)[:, 1]
     m = evaluate.metrics(y_test, y_proba)
 
+    # Per-phase test metrics for trial-granularity runs. Dispatched on
+    # column presence so this stays a no-op for drug-indication runs.
+    per_phase_metrics: dict = {}
+    if "trial_phase" in test_df.columns:
+        per_phase_metrics = evaluate.metrics_by_phase(
+            y_test, y_proba, test_df["trial_phase"].values
+        )
+        for label, mp in per_phase_metrics.items():
+            logger.info(
+                "phase %s: n=%d pos=%d roc_auc=%.4f pr_auc=%.4f",
+                label,
+                mp.get("n", 0),
+                mp.get("n_pos", 0),
+                mp.get("roc_auc", float("nan")),
+                mp.get("pr_auc", float("nan")),
+            )
+
     # Optional probability calibration on the held-out year slice.
     calibrator = None
     y_proba_calibrated = None
     calibration_metrics: dict = {}
+    per_phase_metrics_calibrated: dict = {}
     if X_calib is not None and y_calib is not None and len(y_calib) > 0:
         raw_calib = model.predict_proba(X_calib)[:, 1]
         method = (config.calibration_method or "isotonic").lower()
@@ -227,6 +249,12 @@ def train_one_run(
             raise ValueError(f"unknown calibration_method: {config.calibration_method!r}")
         y_proba_calibrated = np.clip(np.asarray(y_proba_calibrated), 0.0, 1.0)
         m_cal = evaluate.metrics(y_test, y_proba_calibrated)
+        if "trial_phase" in test_df.columns:
+            per_phase_metrics_calibrated = evaluate.metrics_by_phase(
+                y_test, y_proba_calibrated, test_df["trial_phase"].values
+            )
+        else:
+            per_phase_metrics_calibrated = {}
         ece_pre = evaluate.expected_calibration_error(y_test, y_proba)
         ece_post = evaluate.expected_calibration_error(y_test, y_proba_calibrated)
         calibration_metrics = {
@@ -259,11 +287,12 @@ def train_one_run(
         )
 
     # Predictions table for downstream inspection.
-    pred_cols = {
-        "candidate_id": test_df["candidate_id"].values,
-        "y_true": y_test,
-        "y_proba": y_proba,
-    }
+    pred_cols: dict = {}
+    if "nct_id" in test_df.columns:
+        pred_cols["nct_id"] = test_df["nct_id"].values
+    pred_cols["candidate_id"] = test_df["candidate_id"].values
+    pred_cols["y_true"] = y_test
+    pred_cols["y_proba"] = y_proba
     if y_proba_calibrated is not None:
         pred_cols["y_proba_calibrated"] = y_proba_calibrated
     pred_df = pd.DataFrame(pred_cols)
@@ -289,6 +318,8 @@ def train_one_run(
         calibration_metrics=calibration_metrics,
         n_calib=int(len(y_calib)) if y_calib is not None else 0,
         calib_pos=int(y_calib.sum()) if y_calib is not None else 0,
+        per_phase_metrics=per_phase_metrics,
+        per_phase_metrics_calibrated=per_phase_metrics_calibrated,
     )
 
 

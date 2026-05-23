@@ -49,6 +49,8 @@ def save_run(result: RunResult, output_dir: Path, *, write_report: bool = True) 
         "test_pos": result.test_pos,
         "calib_pos": result.calib_pos,
         "metrics": result.metrics,
+        "per_phase_metrics": result.per_phase_metrics or None,
+        "per_phase_metrics_calibrated": result.per_phase_metrics_calibrated or None,
         "calibration": result.calibration_metrics or None,
         "config": result.config,
     }

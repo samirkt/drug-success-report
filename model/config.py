@@ -14,6 +14,7 @@ from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CANDIDATE_DETAIL = PROJECT_ROOT / "outputs" / "candidate_detail.parquet"
+DEFAULT_TRIAL_DETAIL = PROJECT_ROOT / "outputs" / "trial_detail.parquet"
 DEFAULT_FINGERPRINTS = PROJECT_ROOT / "outputs" / "features" / "fingerprints.parquet"
 DEFAULT_EMBEDDINGS = PROJECT_ROOT / "outputs" / "features" / "molformer_embeddings.parquet"
 
@@ -60,11 +61,16 @@ class ModelingConfig:
     """Top-level config for a single training run."""
 
     candidate_detail_path: Path = DEFAULT_CANDIDATE_DETAIL
+    trial_detail_path: Path = DEFAULT_TRIAL_DETAIL
     fingerprints_path: Path = DEFAULT_FINGERPRINTS
     embeddings_path: Path = DEFAULT_EMBEDDINGS
 
     label: LabelConfig = field(default_factory=LabelConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
+
+    # "drug_indication" → one row per candidate, y from candidate.outcome.
+    # "trial" → one row per NCT, y from trial_detail.trial_inferred_label.
+    training_granularity: str = "drug_indication"
 
     model_name: str = "xgb"
     model_kwargs: dict = field(default_factory=dict)

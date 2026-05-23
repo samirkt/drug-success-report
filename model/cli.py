@@ -25,6 +25,7 @@ from .config import (
     DEFAULT_CANDIDATE_DETAIL,
     DEFAULT_EMBEDDINGS,
     DEFAULT_FINGERPRINTS,
+    DEFAULT_TRIAL_DETAIL,
 )
 from .train import train_one_run
 
@@ -60,8 +61,13 @@ def _parse_kwargs(s: str | None) -> dict:
     return out
 
 
+_DEFAULT_TIME_SPLIT_COLUMN = "earliest_start_date"
+_TRIAL_TIME_SPLIT_COLUMN = "trial_start_date"
+
+
 def _add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--candidate-detail", type=Path, default=DEFAULT_CANDIDATE_DETAIL)
+    p.add_argument("--trial-detail", type=Path, default=DEFAULT_TRIAL_DETAIL)
     p.add_argument("--fingerprints", type=Path, default=DEFAULT_FINGERPRINTS)
     p.add_argument("--embeddings", type=Path, default=DEFAULT_EMBEDDINGS)
     p.add_argument("--seed", type=int, default=0)
@@ -82,8 +88,12 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--time-split-column",
-        default="earliest_start_date",
-        help="Column used for the temporal split (default: earliest_start_date).",
+        default=_DEFAULT_TIME_SPLIT_COLUMN,
+        help=(
+            f"Column used for the temporal split (default: {_DEFAULT_TIME_SPLIT_COLUMN} "
+            f"for drug-indication mode; auto-switched to {_TRIAL_TIME_SPLIT_COLUMN} for "
+            f"trial mode unless explicitly overridden)."
+        ),
     )
     p.add_argument(
         "--calibration-year",
@@ -132,7 +142,11 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--output", type=Path, required=True)
 
 
-def _build_config(args: argparse.Namespace) -> ModelingConfig:
+def _build_config(
+    args: argparse.Namespace,
+    *,
+    granularity: str = "drug_indication",
+) -> ModelingConfig:
     label = LabelConfig(
         positive=_parse_csv(args.label_positive),
         negative=_parse_csv(args.label_negative),
@@ -159,18 +173,32 @@ def _build_config(args: argparse.Namespace) -> ModelingConfig:
             stacklevel=2,
         )
         time_split_year = None
+
+    # Trial-mode defaults: the candidate-level columns the drug_indication
+    # defaults assume (`earliest_start_date`, no group_by) don't make sense
+    # on the trial frame. Auto-switch unless the user explicitly overrode.
+    time_split_column = args.time_split_column
+    group_by = args.group_by
+    if granularity == "trial":
+        if time_split_column == _DEFAULT_TIME_SPLIT_COLUMN:
+            time_split_column = _TRIAL_TIME_SPLIT_COLUMN
+        if group_by is None:
+            group_by = "candidate_id"
+
     return ModelingConfig(
         candidate_detail_path=args.candidate_detail,
+        trial_detail_path=args.trial_detail,
         fingerprints_path=args.fingerprints,
         embeddings_path=args.embeddings,
         label=label,
         features=features,
+        training_granularity=granularity,
         model_name=args.model,
         model_kwargs=_parse_kwargs(args.model_kwargs),
         test_size=args.test_size,
         seed=args.seed,
-        group_by=args.group_by,
-        time_split_column=args.time_split_column,
+        group_by=group_by,
+        time_split_column=time_split_column,
         time_split_year=time_split_year,
         calibration_year=args.calibration_year,
         calibration_method=args.calibration_method,
@@ -179,15 +207,38 @@ def _build_config(args: argparse.Namespace) -> ModelingConfig:
 
 
 def _cmd_train(args: argparse.Namespace) -> None:
-    config = _build_config(args)
-    result = train_one_run(config)
-    save_run(result, config.output_dir)
-    print(
-        f"\nROC-AUC={result.metrics['roc_auc']:.4f} "
-        f"PR-AUC={result.metrics['pr_auc']:.4f} "
-        f"F1={result.metrics['f1']:.4f} "
-        f"Brier={result.metrics['brier']:.4f}"
-    )
+    if args.training_granularity == "both":
+        granularities = ("drug_indication", "trial")
+    else:
+        granularities = (args.training_granularity,)
+
+    out_root = Path(args.output)
+    multi = len(granularities) > 1
+    for g in granularities:
+        config = _build_config(args, granularity=g)
+        out_dir = out_root / g if multi else out_root
+        config = replace(config, output_dir=out_dir)
+        result = train_one_run(config)
+        save_run(result, out_dir)
+        prefix = f"[{g}] " if multi else ""
+        print(
+            f"\n{prefix}ROC-AUC={result.metrics['roc_auc']:.4f} "
+            f"PR-AUC={result.metrics['pr_auc']:.4f} "
+            f"F1={result.metrics['f1']:.4f} "
+            f"Brier={result.metrics['brier']:.4f}"
+        )
+        for label, mp in (result.per_phase_metrics or {}).items():
+            n = mp.get("n", 0)
+            if n == 0:
+                print(f"{prefix}  {label}: n=0 (no test rows at this phase)")
+                continue
+            print(
+                f"{prefix}  {label}: n={n} pos={mp.get('n_pos', 0)} "
+                f"ROC-AUC={mp.get('roc_auc', float('nan')):.4f} "
+                f"PR-AUC={mp.get('pr_auc', float('nan')):.4f} "
+                f"F1={mp.get('f1', float('nan')):.4f} "
+                f"Brier={mp.get('brier', float('nan')):.4f}"
+            )
 
 
 def _cmd_baselines(args: argparse.Namespace) -> None:
@@ -321,6 +372,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_train = sub.add_parser("train", help="Train a single model and write artifacts.")
     _add_common_args(p_train)
+    p_train.add_argument(
+        "--training-granularity",
+        default="both",
+        choices=("drug_indication", "trial", "both"),
+        help=(
+            "drug_indication = one row per candidate, y from candidate.outcome "
+            "(the original mode). trial = one row per NCT, y from "
+            "trial_inferred_label (drops trials with a null label). both = run "
+            "each in turn and write artifacts under per-mode subdirs. "
+            "Default: both."
+        ),
+    )
     p_train.set_defaults(func=_cmd_train)
 
     p_abl = sub.add_parser("ablate", help="Run ablation across feature subsets.")
