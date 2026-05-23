@@ -113,3 +113,63 @@ class TestRun:
         cache = IcdCache(cache_path)
         assert cache.get("Type 2 Diabetes") == (True, ["E11"])
         assert cache.get("Influenza") == (True, None)
+
+    @patch("pipeline.enrichment.icd.get_icd_from_nih")
+    def test_mesh_indication_preferred_over_raw_indication(self, mock_lookup):
+        # MeSH succeeds — raw indication should never be queried.
+        mock_lookup.side_effect = lambda name, timeout: {
+            "Diabetes Mellitus, Type 2": ["E11", "E11.9"],
+        }.get(name)
+
+        cands = CandidateTable(candidates=[
+            Candidate(
+                candidate_id="c1",
+                drug_name="DrugA",
+                indication="T2DM",  # ill-formed; would miss NLM
+                mesh_indication="Diabetes Mellitus, Type 2",
+            ),
+        ])
+        IcdEnrichment().run(cands, ledger=_FakeLedger())
+
+        assert cands.candidates[0].icd10_codes == ["E11", "E11.9"]
+        # MeSH key resolved first, so only one lookup was attempted.
+        called_with = [c.args[0] for c in mock_lookup.call_args_list]
+        assert called_with == ["Diabetes Mellitus, Type 2"]
+
+    @patch("pipeline.enrichment.icd.get_icd_from_nih")
+    def test_falls_back_to_indication_when_mesh_misses(self, mock_lookup):
+        # MeSH returns None → fall back to the raw indication.
+        mock_lookup.side_effect = lambda name, timeout: {
+            "Diabetes Mellitus, Type 2": None,
+            "Type 2 Diabetes": ["E11"],
+        }.get(name)
+
+        cands = CandidateTable(candidates=[
+            Candidate(
+                candidate_id="c1",
+                drug_name="DrugA",
+                indication="Type 2 Diabetes",
+                mesh_indication="Diabetes Mellitus, Type 2",
+            ),
+        ])
+        IcdEnrichment().run(cands, ledger=_FakeLedger())
+
+        assert cands.candidates[0].icd10_codes == ["E11"]
+        called_with = [c.args[0] for c in mock_lookup.call_args_list]
+        assert set(called_with) == {"Diabetes Mellitus, Type 2", "Type 2 Diabetes"}
+
+    @patch("pipeline.enrichment.icd.get_icd_from_nih")
+    def test_no_mesh_uses_indication_only(self, mock_lookup):
+        # Backwards-compatible path: when mesh_indication is missing, the
+        # raw indication is the only key tried — same as before.
+        mock_lookup.side_effect = lambda name, timeout: {
+            "Influenza": ["J10"],
+        }.get(name)
+
+        cands = CandidateTable(candidates=[
+            Candidate(candidate_id="c1", drug_name="DrugA", indication="Influenza"),
+        ])
+        IcdEnrichment().run(cands, ledger=_FakeLedger())
+
+        assert cands.candidates[0].icd10_codes == ["J10"]
+        assert mock_lookup.call_count == 1

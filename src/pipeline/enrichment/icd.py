@@ -1,9 +1,13 @@
 """ICD-10 enrichment — maps each candidate's indication to ICD-10-CM codes.
 
-Calls the NLM Clinical Tables API via :mod:`pipeline.icd_lookup`. Lookups
-are cached on disk so re-runs over the same indication strings are free.
-The stage is gated by ``config.enable_icd_enrichment`` (default False)
-because it makes a network call per unique indication.
+Calls the NLM Clinical Tables API via :mod:`pipeline.icd_lookup`. For each
+candidate the lookup tries ``mesh_indication`` first (a canonical MeSH
+term is far closer to NLM's ICD-10-CM index than free-text trial copy)
+and falls back to the raw ``indication`` string when MeSH yields no
+match. Both keys are written to the same on-disk cache so subsequent
+runs over the same vocabulary are free. The stage is gated by
+``config.enable_icd_enrichment`` (default False) because it makes a
+network call per unique unresolved key.
 """
 
 from __future__ import annotations
@@ -51,61 +55,90 @@ class IcdEnrichment:
         cache: Optional[IcdCache] = (
             IcdCache(self._cache_path) if self._cache_path is not None else None
         )
-
-        # Group by unique indication so we don't pay 1 RPC per duplicate row.
-        unique_indications: dict[str, list] = {}
-        for cand in candidates.candidates:
-            ind = (cand.indication or "").strip()
-            if not ind:
-                continue
-            unique_indications.setdefault(ind, []).append(cand)
-
-        if not unique_indications:
-            ledger.record_coverage(self.name, 0, len(candidates.candidates))
-            return candidates
-
-        # Split into cache hits vs net-new fetches up front so the user
-        # can see the hit-rate before any network calls go out.
-        results: dict[str, Optional[list[str]]] = {}
-        to_fetch: list[str] = []
-        for name in unique_indications.keys():
-            if cache is not None:
-                hit, value = cache.get(name)
-                if hit:
-                    results[name] = value
-                    continue
-            to_fetch.append(name)
-
-        cached_count = len(results)
-        fetch_count = len(to_fetch)
-        unique_count = len(unique_indications)
-        cache_pct = (100.0 * cached_count / unique_count) if unique_count else 0.0
-        logger.info(
-            "IcdEnrichment: %d unique indications — %d cached (%.1f%%), "
-            "%d to fetch from NLM (workers=%d)",
-            unique_count, cached_count, cache_pct, fetch_count, self._max_workers,
-        )
-
-        if fetch_count > 0:
-            self._fetch_with_progress(to_fetch, cache, results)
-
-        n_ok = 0
-        for name, cands in unique_indications.items():
-            codes = results.get(name)
-            if not codes:
-                continue
-            for cand in cands:
-                cand.icd10_codes = list(codes)
-                n_ok += 1
-
         total = len(candidates.candidates)
+
+        # Two-phase resolution: try MeSH for every candidate that has one,
+        # then fall back to the raw indication only for candidates the
+        # MeSH phase didn't resolve. Skipping the second phase for
+        # already-resolved candidates avoids ~one NLM call per candidate
+        # in the common case where MeSH succeeds.
+        results: dict[str, Optional[list[str]]] = {}
+
+        mesh_candidates = [
+            c for c in candidates.candidates if (c.mesh_indication or "").strip()
+        ]
+        mesh_keys = {(c.mesh_indication or "").strip() for c in mesh_candidates}
+        if mesh_keys:
+            self._resolve_keys(mesh_keys, cache, results, phase="mesh")
+
+        resolved_via_mesh: set[int] = set()
+        for cand in mesh_candidates:
+            codes = results.get((cand.mesh_indication or "").strip())
+            if codes:
+                cand.icd10_codes = list(codes)
+                resolved_via_mesh.add(id(cand))
+
+        # Phase 2: raw indication for everyone the MeSH phase didn't resolve.
+        fallback_candidates = [
+            c for c in candidates.candidates
+            if id(c) not in resolved_via_mesh and (c.indication or "").strip()
+        ]
+        indication_keys = {
+            (c.indication or "").strip() for c in fallback_candidates
+        }
+        if indication_keys:
+            self._resolve_keys(indication_keys, cache, results, phase="indication")
+
+        n_via_indication = 0
+        for cand in fallback_candidates:
+            codes = results.get((cand.indication or "").strip())
+            if codes:
+                cand.icd10_codes = list(codes)
+                n_via_indication += 1
+
+        n_via_mesh = len(resolved_via_mesh)
+        n_ok = n_via_mesh + n_via_indication
         logger.info(
             "IcdEnrichment: %d/%d candidates received ICD-10 codes "
-            "(unique indications: %d, cache hits: %d, fetched: %d)",
-            n_ok, total, unique_count, cached_count, fetch_count,
+            "(via mesh: %d, via indication fallback: %d)",
+            n_ok, total, n_via_mesh, n_via_indication,
         )
         ledger.record_coverage(self.name, n_ok, total)
         return candidates
+
+    def _resolve_keys(
+        self,
+        keys: set[str],
+        cache: Optional[IcdCache],
+        results: dict[str, Optional[list[str]]],
+        *,
+        phase: str,
+    ) -> None:
+        """Cache-check + fetch a batch of lookup keys, mutating ``results`` in place."""
+        to_fetch: list[str] = []
+        cached_count = 0
+        for key in keys:
+            if key in results:
+                continue
+            if cache is not None:
+                hit, value = cache.get(key)
+                if hit:
+                    results[key] = value
+                    cached_count += 1
+                    continue
+            to_fetch.append(key)
+
+        unique_count = len(keys)
+        fetch_count = len(to_fetch)
+        cache_pct = (100.0 * cached_count / unique_count) if unique_count else 0.0
+        logger.info(
+            "IcdEnrichment[%s]: %d unique keys — %d cached (%.1f%%), "
+            "%d to fetch from NLM (workers=%d)",
+            phase, unique_count, cached_count, cache_pct,
+            fetch_count, self._max_workers,
+        )
+        if fetch_count > 0:
+            self._fetch_with_progress(to_fetch, cache, results)
 
     def _fetch_with_progress(
         self,
