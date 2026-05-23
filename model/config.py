@@ -24,8 +24,8 @@ ALL_FEATURE_GROUPS: tuple[str, ...] = (
     "admet",
     "pathway",
     "disease",
-    "action_type",
-    "moa",
+    #"action_type",
+    #"moa",
 )
 
 

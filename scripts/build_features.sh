@@ -15,8 +15,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-CANDIDATES="${1:-docs/candidate_detail.parquet}"
-FEATURES_DIR="${2:-docs/features}"
+CANDIDATES="${1:-outputs/candidate_detail.parquet}"
+FEATURES_DIR="${2:-outputs/features}"
 
 if [[ ! -f "$CANDIDATES" ]]; then
     echo "error: candidates parquet not found at: $CANDIDATES" >&2
