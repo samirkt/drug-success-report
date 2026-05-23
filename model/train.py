@@ -47,6 +47,9 @@ class RunResult:
     # for drug-indication runs (no `trial_phase` column).
     per_phase_metrics: dict = field(default_factory=dict)
     per_phase_metrics_calibrated: dict = field(default_factory=dict)
+    # HINT-shape test rows (10-column DataFrame); only populated for
+    # trial-granularity runs. Persisted by `save_run` as `hint_test.csv`.
+    hint_test_df: Optional[pd.DataFrame] = None
 
 
 def _instantiate_groups(config: ModelingConfig) -> list[FeatureGroup]:
@@ -213,6 +216,7 @@ def train_one_run(
     # Per-phase test metrics for trial-granularity runs. Dispatched on
     # column presence so this stays a no-op for drug-indication runs.
     per_phase_metrics: dict = {}
+    hint_test_df: Optional[pd.DataFrame] = None
     if "trial_phase" in test_df.columns:
         per_phase_metrics = evaluate.metrics_by_phase(
             y_test, y_proba, test_df["trial_phase"].values
@@ -226,6 +230,15 @@ def train_one_run(
                 mp.get("roc_auc", float("nan")),
                 mp.get("pr_auc", float("nan")),
             )
+        # HINT-format projection of the exact test rows used above, for
+        # downstream side-by-side comparison via `run_hint.sh`.
+        from .hint_format import to_hint_frame
+        hint_test_df = to_hint_frame(test_df, phase="all")
+        logger.info(
+            "HINT test set: %d rows (from %d test rows; HINT filters drop missing SMILES/ICD/criteria)",
+            len(hint_test_df),
+            len(test_df),
+        )
 
     # Optional probability calibration on the held-out year slice.
     calibrator = None
@@ -320,6 +333,7 @@ def train_one_run(
         calib_pos=int(y_calib.sum()) if y_calib is not None else 0,
         per_phase_metrics=per_phase_metrics,
         per_phase_metrics_calibrated=per_phase_metrics_calibrated,
+        hint_test_df=hint_test_df,
     )
 
 

@@ -61,6 +61,11 @@ def save_run(result: RunResult, output_dir: Path, *, write_report: bool = True) 
     if result.test_predictions is not None:
         result.test_predictions.to_csv(output_dir / "predictions.csv", index=False)
 
+    if result.hint_test_df is not None:
+        hint_path = output_dir / "hint_test.csv"
+        result.hint_test_df.to_csv(hint_path, index=False)
+        logger.info("HINT test CSV written to %s (%d rows)", hint_path, len(result.hint_test_df))
+
     if result.feature_importances is not None and len(result.feature_names) == len(result.feature_importances):
         fi_df = pd.DataFrame({
             "feature": result.feature_names,

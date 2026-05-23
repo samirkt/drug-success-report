@@ -5,12 +5,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RUN_HINT_SCRIPT = PROJECT_ROOT / "run_hint.sh"
 
 from .ablate import run_ablation
 from .artifacts import save_run
@@ -206,6 +212,40 @@ def _build_config(
     )
 
 
+def _invoke_run_hint(csv_path: Path, *, prefix: str = "") -> None:
+    """Run `run_hint.sh <csv>` and stream its stdout/stderr through.
+
+    Failures (missing script, nonzero exit) are logged as warnings, not
+    raised — the trainer run is already complete and the CSV is on disk,
+    so the user can replay HINT manually.
+    """
+    if not RUN_HINT_SCRIPT.exists():
+        logger.warning(
+            "run_hint.sh not found at %s — skipping HINT eval (CSV is at %s)",
+            RUN_HINT_SCRIPT,
+            csv_path,
+        )
+        return
+    print(f"\n{prefix}invoking HINT: {RUN_HINT_SCRIPT} {csv_path}")
+    # Flush so our prints land before the subprocess's stdout when piped.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    try:
+        subprocess.run([str(RUN_HINT_SCRIPT), str(csv_path)], check=True)
+    except subprocess.CalledProcessError as exc:
+        logger.warning(
+            "run_hint.sh exited with code %d — HINT eval failed (CSV is at %s)",
+            exc.returncode,
+            csv_path,
+        )
+    except OSError as exc:
+        logger.warning(
+            "run_hint.sh could not be executed (%s) — HINT eval skipped (CSV is at %s)",
+            exc,
+            csv_path,
+        )
+
+
 def _cmd_train(args: argparse.Namespace) -> None:
     if args.training_granularity == "both":
         granularities = ("drug_indication", "trial")
@@ -239,6 +279,14 @@ def _cmd_train(args: argparse.Namespace) -> None:
                 f"F1={mp.get('f1', float('nan')):.4f} "
                 f"Brier={mp.get('brier', float('nan')):.4f}"
             )
+
+        # Trial mode side-step: hand the same test rows to HINT.
+        if g == "trial" and result.hint_test_df is not None:
+            hint_csv = (out_dir / "hint_test.csv").resolve()
+            if args.skip_hint:
+                print(f"{prefix}HINT eval skipped (--skip-hint); CSV at {hint_csv}")
+            elif hint_csv.exists():
+                _invoke_run_hint(hint_csv, prefix=prefix)
 
 
 def _cmd_baselines(args: argparse.Namespace) -> None:
@@ -382,6 +430,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "trial_inferred_label (drops trials with a null label). both = run "
             "each in turn and write artifacts under per-mode subdirs. "
             "Default: both."
+        ),
+    )
+    p_train.add_argument(
+        "--skip-hint",
+        action="store_true",
+        help=(
+            "Trial mode only. Still write hint_test.csv but do not invoke "
+            "run_hint.sh on it. Useful for quick iterations where you only "
+            "want to inspect our model's metrics."
         ),
     )
     p_train.set_defaults(func=_cmd_train)

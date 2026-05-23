@@ -55,41 +55,13 @@ import logging
 import sys
 from pathlib import Path
 
+# Make sibling `model/` package importable when this script is invoked
+# from anywhere (e.g. `uv run python scripts/build_hint_dataset.py ...`).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from model.hint_format import HINT_COLUMNS, SMILES_COLUMN, to_hint_frame  # noqa: E402,F401
+
 logger = logging.getLogger("build_hint_dataset")
-
-SMILES_COLUMN = "smiles"
-
-HINT_COLUMNS = [
-    "nctid",       # 0
-    "status",      # 1 (filler)
-    "why_stop",    # 2 (filler)
-    "label",       # 3
-    "phase",       # 4 (filler)
-    "diseases",    # 5
-    "icdcodes",    # 6
-    "drugs",       # 7
-    "smiless",     # 8
-    "criteria",    # 9
-]
-
-# Map "1"/"2"/"3"/"4" to the canonical phase string used in trial_detail.parquet.
-_PHASE_FILTER = {
-    "1": "Phase 1",
-    "2": "Phase 2",
-    "3": "Phase 3",
-    "4": "Phase 4",
-}
-
-
-def _is_nonempty_list(value) -> bool:
-    """True iff `value` is a list-like with at least one truthy entry."""
-    if value is None:
-        return False
-    try:
-        seq = list(value)
-    except TypeError:
-        return False
-    return any(seq)
 
 
 def build(
@@ -135,40 +107,12 @@ def build(
         how="left",
         suffixes=("", "_cand"),
     )
-    raw_n = len(df)
-    logger.info("raw joined rows: %d", raw_n)
+    logger.info("raw joined rows: %d", len(df))
 
-    if phase != "all":
-        target = _PHASE_FILTER.get(phase)
-        if target is None:
-            raise SystemExit(f"--phase {phase!r} not recognized. Use 1, 2, 3, 4, or all.")
-        df = df[df["trial_phase"] == target]
-        logger.info("after --phase %s filter (%s only): %d", phase, target, len(df))
-
-    df = df[df[SMILES_COLUMN].notna() & (df[SMILES_COLUMN].astype(str).str.len() > 0)]
-    logger.info("after non-null %s: %d", SMILES_COLUMN, len(df))
-
-    df = df[df["trial_inferred_label"].notna()]
-    logger.info("after non-null inferred_label: %d", len(df))
-
-    df = df[df["icd10_codes"].apply(_is_nonempty_list)]
-    logger.info("after non-empty icd10_codes: %d", len(df))
-
-    df = df[df["trial_eligibility_criteria"].notna() & (df["trial_eligibility_criteria"].astype(str).str.len() > 0)]
-    logger.info("after non-empty eligibility_criteria: %d", len(df))
-
-    out = pd.DataFrame({
-        "nctid":    df["nct_id"].astype(str),
-        "status":   df["trial_status"].fillna("").astype(str),
-        "why_stop": df["trial_why_stopped"].fillna("").astype(str),
-        "label":    df["trial_inferred_label"].astype(int),
-        "phase":    df["trial_phase"].fillna("").astype(str),
-        "diseases": df["indication"].apply(lambda x: str([x] if x else [])),
-        "icdcodes": df["icd10_codes"].apply(lambda x: str(list(x))),
-        "drugs":    df["drug_name"].apply(lambda x: str([x] if x else [])),
-        "smiless":  df[SMILES_COLUMN].apply(lambda x: str([x])),
-        "criteria": df["trial_eligibility_criteria"].astype(str),
-    })
+    try:
+        out = to_hint_frame(df, phase=phase)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(output_csv, index=False)
