@@ -213,7 +213,10 @@ def _build_config(
 
 
 def _invoke_run_hint(csv_path: Path, *, prefix: str = "") -> None:
-    """Run `run_hint.sh <csv>` and stream its stdout/stderr through.
+    """Run `run_hint.sh <input.csv> <output.csv>` and stream its stdout/stderr through.
+
+    Output lands at `<input_dir>/hint_results.csv` to match the path the
+    consolidated report script picks up via `--hint-metrics`.
 
     Failures (missing script, nonzero exit) are logged as warnings, not
     raised — the trainer run is already complete and the CSV is on disk,
@@ -226,12 +229,13 @@ def _invoke_run_hint(csv_path: Path, *, prefix: str = "") -> None:
             csv_path,
         )
         return
-    print(f"\n{prefix}invoking HINT: {RUN_HINT_SCRIPT} {csv_path}")
+    out_path = csv_path.parent / "hint_results.csv"
+    print(f"\n{prefix}invoking HINT: {RUN_HINT_SCRIPT} {csv_path} {out_path}")
     # Flush so our prints land before the subprocess's stdout when piped.
     sys.stdout.flush()
     sys.stderr.flush()
     try:
-        subprocess.run([str(RUN_HINT_SCRIPT), str(csv_path)], check=True)
+        subprocess.run([str(RUN_HINT_SCRIPT), str(csv_path), str(out_path)], check=True)
     except subprocess.CalledProcessError as exc:
         logger.warning(
             "run_hint.sh exited with code %d — HINT eval failed (CSV is at %s)",

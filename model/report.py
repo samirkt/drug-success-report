@@ -359,6 +359,169 @@ def _feature_importance_page(pdf: PdfPages, result: "RunResult", top_n: int = 30
     plt.close(fig)
 
 
+def _f1_threshold_page(
+    pdf: PdfPages,
+    result: "RunResult",
+    *,
+    chosen_threshold: float = 0.5,
+    extra_thresholds: tuple[float, ...] = (0.3, 0.4, 0.5, 0.6),
+) -> None:
+    """F1/precision/recall sweep over thresholds + operating-points table on one page."""
+    from sklearn.metrics import precision_recall_curve
+
+    preds = result.test_predictions
+    if preds is None or preds.empty:
+        _write_text_page(pdf, "F1 vs threshold", "(no test predictions)", caption="")
+        return
+    y_true = preds["y_true"].values.astype(int)
+    y_proba = preds["y_proba"].values.astype(float)
+
+    precision, recall, thr = precision_recall_curve(y_true, y_proba)
+    # precision_recall_curve returns precision/recall arrays one longer than thr.
+    p_at_thr = precision[:-1]
+    r_at_thr = recall[:-1]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        f1_at_thr = np.where(
+            (p_at_thr + r_at_thr) > 0,
+            2 * p_at_thr * r_at_thr / (p_at_thr + r_at_thr),
+            0.0,
+        )
+
+    best_idx = int(np.nanargmax(f1_at_thr)) if len(f1_at_thr) else 0
+    best_thr = float(thr[best_idx]) if len(thr) else float("nan")
+    best_f1 = float(f1_at_thr[best_idx]) if len(f1_at_thr) else float("nan")
+
+    fig = _new_landscape()
+    _add_caption(
+        fig,
+        "Precision/recall/F1 as a function of decision threshold. The vertical red line marks the chosen operating "
+        f"threshold ({chosen_threshold:.2f}); the green dashed line marks the F1-maximizing threshold ({best_thr:.3f} → F1={best_f1:.3f}). "
+        "The table below lists confusion-matrix counts and PR/F1 at a few selected thresholds.",
+    )
+    gs = fig.add_gridspec(2, 1, height_ratios=[2.4, 1.0], hspace=0.45, left=0.07, right=0.97, top=0.85, bottom=0.06)
+    ax = fig.add_subplot(gs[0, 0])
+    ax.plot(thr, p_at_thr, label="precision", color="tab:blue")
+    ax.plot(thr, r_at_thr, label="recall", color="tab:orange")
+    ax.plot(thr, f1_at_thr, label="F1", color="tab:green", linewidth=2.0)
+    ax.axvline(chosen_threshold, color="red", linestyle="--", linewidth=0.9, label=f"chosen={chosen_threshold:.2f}")
+    ax.axvline(best_thr, color="tab:green", linestyle=":", linewidth=0.9, label=f"argmax F1={best_thr:.3f}")
+    ax.set_xlabel("Decision threshold")
+    ax.set_ylabel("Score")
+    ax.set_title("Precision / recall / F1 vs threshold — test set", fontsize=11, pad=8)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.01)
+    ax.legend(loc="lower left", fontsize=8, ncols=2)
+    ax.grid(alpha=0.25)
+
+    # Operating-points table
+    thresholds = sorted(set(list(extra_thresholds) + [chosen_threshold, best_thr]))
+    rows = []
+    n_pos_total = int(y_true.sum())
+    n_neg_total = int(len(y_true) - n_pos_total)
+    for t in thresholds:
+        y_pred = (y_proba >= t).astype(int)
+        tp = int(((y_pred == 1) & (y_true == 1)).sum())
+        fp = int(((y_pred == 1) & (y_true == 0)).sum())
+        tn = int(((y_pred == 0) & (y_true == 0)).sum())
+        fn = int(((y_pred == 0) & (y_true == 1)).sum())
+        p = tp / max(tp + fp, 1)
+        r = tp / max(n_pos_total, 1)
+        f1 = 2 * p * r / max(p + r, 1e-12)
+        marker = ""
+        if abs(t - chosen_threshold) < 1e-9:
+            marker = " (chosen)"
+        elif abs(t - best_thr) < 1e-9:
+            marker = " (argmax F1)"
+        rows.append({
+            "threshold": f"{t:.3f}{marker}",
+            "TP": tp, "FP": fp, "TN": tn, "FN": fn,
+            "precision": p, "recall": r, "F1": f1,
+        })
+    table_df = pd.DataFrame(rows)
+    ax_tbl = fig.add_subplot(gs[1, 0])
+    ax_tbl.set_axis_off()
+    formatters = {c: "{:.4f}".format for c in table_df.columns if pd.api.types.is_float_dtype(table_df[c])}
+    body = table_df.to_string(index=False, formatters=formatters)
+    ax_tbl.text(
+        0.0, 1.0, body, family="monospace", fontsize=8.5, va="top", ha="left",
+    )
+    ax_tbl.set_title(
+        f"Operating points  (positives={n_pos_total}, negatives={n_neg_total})",
+        fontsize=10, loc="left", pad=4,
+    )
+    pdf.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _dual_curves_page(
+    pdf: PdfPages,
+    result_a: "RunResult",
+    result_b: "RunResult",
+    *,
+    label_a: str,
+    label_b: str,
+    title: str,
+    caption: str | None = None,
+) -> None:
+    """Side-by-side ROC + PRC comparing two models on (assumed-aligned) test sets."""
+    from sklearn.metrics import (
+        roc_curve, roc_auc_score, precision_recall_curve, average_precision_score,
+    )
+
+    def _arrays(result):
+        preds = result.test_predictions
+        if preds is None or preds.empty:
+            return None, None
+        return (
+            preds["y_true"].values.astype(int),
+            preds["y_proba"].values.astype(float),
+        )
+
+    yA, pA = _arrays(result_a)
+    yB, pB = _arrays(result_b)
+    if yA is None or yB is None:
+        _write_text_page(pdf, title, "(missing predictions for one of the two models)", caption=caption or "")
+        return
+
+    fig = _new_landscape()
+    if caption:
+        _add_caption(fig, caption)
+    gs = fig.add_gridspec(1, 2, wspace=0.25, left=0.07, right=0.97, top=0.85, bottom=0.08)
+
+    # ROC
+    ax = fig.add_subplot(gs[0, 0])
+    for y, p, name in ((yA, pA, label_a), (yB, pB, label_b)):
+        fpr, tpr, _ = roc_curve(y, p)
+        ax.plot(fpr, tpr, label=f"{name}  AUC={roc_auc_score(y, p):.4f}")
+    ax.plot([0, 1], [0, 1], color="grey", linestyle=":", linewidth=0.8)
+    ax.set_xlabel("False positive rate")
+    ax.set_ylabel("True positive rate")
+    ax.set_title("ROC", fontsize=11, pad=6)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.01)
+    ax.legend(loc="lower right", fontsize=9)
+    ax.grid(alpha=0.25)
+
+    # PRC
+    ax2 = fig.add_subplot(gs[0, 1])
+    base_rate = float(np.mean(np.concatenate([yA, yB])))
+    for y, p, name in ((yA, pA, label_a), (yB, pB, label_b)):
+        precision, recall, _ = precision_recall_curve(y, p)
+        ax2.plot(recall, precision, label=f"{name}  AP={average_precision_score(y, p):.4f}")
+    ax2.axhline(base_rate, color="grey", linestyle=":", linewidth=0.8, label=f"base rate≈{base_rate:.3f}")
+    ax2.set_xlabel("Recall")
+    ax2.set_ylabel("Precision")
+    ax2.set_title("Precision-Recall", fontsize=11, pad=6)
+    ax2.set_xlim(0, 1)
+    ax2.set_ylim(0, 1.01)
+    ax2.legend(loc="lower left", fontsize=9)
+    ax2.grid(alpha=0.25)
+
+    fig.suptitle("" if caption else title, fontsize=12, y=0.97)
+    pdf.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _rfe_pages(pdf: PdfPages, rfe_summary) -> None:
     if rfe_summary is None:
         return

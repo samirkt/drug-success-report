@@ -19,8 +19,9 @@ DEFAULT_FINGERPRINTS = PROJECT_ROOT / "outputs" / "features" / "fingerprints.par
 DEFAULT_EMBEDDINGS = PROJECT_ROOT / "outputs" / "features" / "molformer_embeddings.parquet"
 
 ALL_FEATURE_GROUPS: tuple[str, ...] = (
-    "tanimoto_nn",
-    "molformer_nn",
+    #"tanimoto_nn",
+    #"molformer_nn",
+    "embeddings",
     "targets",
     "admet",
     "pathway",

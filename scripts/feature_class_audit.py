@@ -1,6 +1,6 @@
 """One-shot feature-class audit for the LOA modeling dataset.
 
-Lean PDF (default ``outputs/feature_class_audit.pdf``) — 9 pages:
+Lean PDF (default ``outputs/feature_class_audit.pdf``) — 7 pages:
 
   1. Summary           - per-representation table (sub-rows for each class
                          showing enc_dim + coverage), coverage by year,
@@ -8,10 +8,10 @@ Lean PDF (default ``outputs/feature_class_audit.pdf``) — 9 pages:
   2-6. Per class       - molecular | disease | target | pathway | admet
                          text stats + richness distribution + outcome split
                          + coverage by year
-  7. Top values        - most common values for one-hot / multi-hot columns
+  7. Top values        - most common values for multi-hot columns
                          (pathway shown both ancestor-expanded and locally-leaf)
-  8. Frequency tail    - target / pathway / disease ID rank-frequency
-  9. PCA               - molecule embedding + disease/pathway multi-hot proxy
+
+(PCA page temporarily disabled — see write_pca_page; re-enable in main().)
 
 Run: ``uv run python scripts/feature_class_audit.py``
 """
@@ -322,7 +322,8 @@ def _class_richness(df: pd.DataFrame, cls: str) -> tuple[pd.Series, str]:
         return pd.Series(np.nan, index=df.index), "ECFP4 bit density"
     if cls == "admet":
         cols = [c for c in ADMET_COLS if c in df.columns]
-        return (df[cols].notna().sum(axis=1) if cols else pd.Series(0, index=df.index)), "# ADMET columns populated"
+        return (df[cols].mean(axis=1, skipna=True) if cols else pd.Series(np.nan, index=df.index)), \
+               "mean ADMET percentile (across 52 cols)"
     raise ValueError(cls)
 
 
@@ -367,8 +368,8 @@ def _class_header_text(df: pd.DataFrame, cls: str, presence: pd.Series, y: pd.Se
 def write_class_page(pdf: PdfPages, cls: str, df: pd.DataFrame, presence: pd.DataFrame) -> None:
     y = df["y"]; year = df["_year"]; pres = presence[cls]
     richness, xlabel = _class_richness(df, cls)
-    rich_present = richness[pres] if cls != "admet" else richness  # admet richness is always defined
-    if cls == "molecular":
+    rich_present = richness[pres]
+    if cls in ("molecular", "admet"):
         rich_present = richness.dropna()
 
     fig = plt.figure(figsize=(8.5, 11))
@@ -382,29 +383,18 @@ def write_class_page(pdf: PdfPages, cls: str, df: pd.DataFrame, presence: pd.Dat
 
     # Distribution (overall)
     ax = fig.add_subplot(gs[1, 0])
-    if cls == "admet":
-        cols = [c for c in ADMET_COLS if c in df.columns]
-        null_rates = pd.Series({c: df[c].isna().mean() for c in cols}).sort_values()
-        names = [c.replace("admet_", "").replace("_drugbank_approved_percentile", "") for c in null_rates.index]
-        colors_ = ["#d62728" if r > 0.95 else CLASS_COLOR["admet"] for r in null_rates.values]
-        ax.barh(range(len(null_rates)), null_rates.values * 100, color=colors_)
-        ax.set_yticks(range(len(null_rates))); ax.set_yticklabels(names, fontsize=4)
-        ax.axvline(95, color="grey", ls=":", lw=0.5)
-        ax.set_xlim(0, 100); ax.set_xlabel("null rate (%)"); ax.invert_yaxis()
-        ax.set_title("Per-column null rate (red = dropped at fit)")
-    else:
-        vals = rich_present
-        if vals.size:
-            upper = max(1, np.quantile(vals, 0.99))
-            if cls == "molecular":
-                bins = np.linspace(vals.min(), vals.max(), 40)
-            else:
-                upper = int(upper) or 1
-                bins = np.arange(1, upper + 2) if vals.dtype.kind in "iu" else np.linspace(0, upper, 30)
-                vals = vals.clip(upper=upper)
-            ax.hist(vals, bins=bins, color=CLASS_COLOR[cls], edgecolor="white")
-            ax.set_xlabel(xlabel + ("" if cls == "molecular" else f"  (clip p99={int(upper)})"))
-        ax.set_ylabel("rows"); ax.set_title(f"Distribution of {xlabel}")
+    vals = rich_present
+    if vals.size:
+        upper = max(1, np.quantile(vals, 0.99))
+        if cls == "molecular":
+            bins = np.linspace(vals.min(), vals.max(), 40)
+        else:
+            upper = int(upper) or 1
+            bins = np.arange(1, upper + 2) if vals.dtype.kind in "iu" else np.linspace(0, upper, 30)
+            vals = vals.clip(upper=upper)
+        ax.hist(vals, bins=bins, color=CLASS_COLOR[cls], edgecolor="white")
+        ax.set_xlabel(xlabel + ("" if cls == "molecular" else f"  (clip p99={int(upper)})"))
+    ax.set_ylabel("rows"); ax.set_title(f"Distribution of {xlabel}")
 
     # Outcome-stratified
     ax = fig.add_subplot(gs[1, 1])
@@ -511,20 +501,12 @@ def write_top_values_page(pdf: PdfPages, df: pd.DataFrame,
         return f"{pid}  {name[:40]}" if name else pid
 
     fig = plt.figure(figsize=(8.5, 11))
-    gs = fig.add_gridspec(3, 2, hspace=0.65, wspace=0.55)
+    gs = fig.add_gridspec(3, 2, hspace=0.65, wspace=0.55, height_ratios=[1, 1, 0.6])
     fig.suptitle(f"Top-{n} values for one-hot / multi-hot feature columns",
                  fontsize=13, y=0.995)
 
-    # disease_area (low-card categorical)
-    ax = fig.add_subplot(gs[0, 0])
-    if "disease_area" in df.columns:
-        _hbar(ax, df["disease_area"].value_counts().head(n), CLASS_COLOR["disease"],
-              "disease_area")
-    else:
-        ax.set_title("disease_area missing"); ax.axis("off")
-
     # MeSH top-level prefixes (disease multi-hot)
-    ax = fig.add_subplot(gs[0, 1])
+    ax = fig.add_subplot(gs[0, 0])
     if "mesh_condition_tree_numbers" in df.columns:
         prefixes = df["mesh_condition_tree_numbers"].apply(
             lambda toks: sorted({t.split(".")[0] for t in toks if t}) if toks is not None
@@ -536,7 +518,7 @@ def write_top_values_page(pdf: PdfPages, df: pd.DataFrame,
         ax.set_title("mesh_condition_tree_numbers missing"); ax.axis("off")
 
     # drug_targets (UniProt multi-hot)
-    ax = fig.add_subplot(gs[1, 0])
+    ax = fig.add_subplot(gs[0, 1])
     if "drug_targets" in df.columns:
         _hbar(ax, _explode_top(df["drug_targets"], n), CLASS_COLOR["target"],
               "drug_targets (UniProt)")
@@ -544,7 +526,7 @@ def write_top_values_page(pdf: PdfPages, df: pd.DataFrame,
         ax.set_title("drug_targets missing"); ax.axis("off")
 
     # Reactome pathway — any depth (ancestor-expanded)
-    ax = fig.add_subplot(gs[1, 1])
+    ax = fig.add_subplot(gs[1, 0])
     if "reactome_pathway_ids" in df.columns:
         _hbar(ax, _explode_top(df["reactome_pathway_ids"], n), CLASS_COLOR["pathway"],
               "Reactome pathway — any depth (ancestor)", label_fn=_path_label)
@@ -552,7 +534,7 @@ def write_top_values_page(pdf: PdfPages, df: pd.DataFrame,
         ax.set_title("reactome_pathway_ids missing"); ax.axis("off")
 
     # Reactome pathway — locally leaf only
-    ax = fig.add_subplot(gs[2, 0])
+    ax = fig.add_subplot(gs[1, 1])
     if "reactome_pathway_ids" in df.columns and children_of:
         _hbar(ax, _locally_leaf_top(df, children_of, n), CLASS_COLOR["pathway"],
               "Reactome pathway — locally leaf only", label_fn=_path_label)
@@ -563,63 +545,23 @@ def write_top_values_page(pdf: PdfPages, df: pd.DataFrame,
     else:
         ax.set_title("reactome_pathway_ids missing"); ax.axis("off")
 
-    # Legend / explanatory text (bottom-right)
-    ax = fig.add_subplot(gs[2, 1]); ax.axis("off")
-    ax.text(0.0, 0.95,
-            "Ancestor vs leaf (Reactome):\n\n"
-            "  ANCESTOR (any depth) explodes\n"
-            "  the ancestry-expanded list, so a\n"
-            "  candidate annotated only with\n"
-            "  'Signaling by GPCR' (R-HSA-372790)\n"
-            "  also contributes to its parents\n"
-            "  ('Signal transduction', etc.).\n"
-            "  Top entries here are broad\n"
-            "  umbrellas.\n\n"
-            "  LOCALLY LEAF keeps only the\n"
-            "  most specific pathway in each\n"
-            "  candidate's set (no child of\n"
-            "  the pathway is also annotated).\n"
-            "  Top entries here are the actual\n"
-            "  biological processes captured.",
-            family="monospace", fontsize=8, va="top", ha="left")
+    # Legend / explanatory text spanning the bottom row
+    ax = fig.add_subplot(gs[2, :]); ax.axis("off")
+    ax.text(0.0, 0.9,
+            "Ancestor vs leaf (Reactome):\n"
+            "  ANCESTOR (any depth) explodes the ancestry-expanded list — a candidate annotated only with "
+            "'Signaling by GPCR' (R-HSA-372790)\n"
+            "  also contributes to its parents ('Signal transduction', etc.). Top entries here are broad umbrellas.\n"
+            "  LOCALLY LEAF keeps only the most specific pathway in each candidate's set (no child of the pathway "
+            "is also annotated).\n"
+            "  Top entries here are the actual biological processes captured.",
+            family="monospace", fontsize=8.5, va="top", ha="left")
 
     pdf.savefig(fig, bbox_inches="tight"); plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
-# Frequency long-tail (3 panels)
-# ---------------------------------------------------------------------------
-
-def write_long_tail_page(pdf: PdfPages, df: pd.DataFrame) -> None:
-    panels = [
-        ("target",  "drug_targets",                CLASS_COLOR["target"]),
-        ("pathway", "reactome_pathway_ids",        CLASS_COLOR["pathway"]),
-        ("disease", "mesh_condition_tree_numbers", CLASS_COLOR["disease"]),
-    ]
-    fig = plt.figure(figsize=(8.5, 11))
-    gs = fig.add_gridspec(3, 1, hspace=0.5)
-    fig.suptitle("Frequency long-tail (rank vs # candidates)", fontsize=13, y=0.99)
-    for i, (label, col, color) in enumerate(panels):
-        ax = fig.add_subplot(gs[i])
-        if col not in df.columns:
-            ax.set_title(f"{label}: {col} missing"); continue
-        counts = df[col].explode().dropna().astype(str).value_counts()
-        if not len(counts):
-            ax.text(0.5, 0.5, "no data", ha="center", va="center"); continue
-        ax.plot(np.arange(1, len(counts) + 1), counts.values, color=color)
-        ax.set_xscale("log"); ax.set_yscale("log")
-        ax.set_xlabel("rank (log)"); ax.set_ylabel("# candidates (log)")
-        for j, (name, c) in enumerate(counts.head(5).items()):
-            ax.annotate(f"{j+1}. {name} ({c})", xy=(j + 1, c),
-                        xytext=(5, 0), textcoords="offset points", fontsize=7, va="center")
-        ax.set_title(f"{label}  vocab={len(counts):,}, "
-                     f"top-50 captures {counts.head(50).sum()/counts.sum()*100:.0f}% of mentions",
-                     fontsize=10)
-    pdf.savefig(fig, bbox_inches="tight"); plt.close(fig)
-
-
-# ---------------------------------------------------------------------------
-# Page 8 — PCA (3 panels)
+# PCA page (3 panels)
 # ---------------------------------------------------------------------------
 
 def _pca_scatter(ax: plt.Axes, X: np.ndarray, y: np.ndarray, title: str, seed: int) -> None:
@@ -705,8 +647,7 @@ def main(argv: list[str] | None = None) -> int:
         for cls in CLASSES:
             write_class_page(pdf, cls, df, presence)
         write_top_values_page(pdf, df, hierarchy)
-        write_long_tail_page(pdf, df)
-        write_pca_page(pdf, df, seed=args.seed, sample=args.pca_sample)
+        # write_pca_page(pdf, df, seed=args.seed, sample=args.pca_sample)  # temporarily disabled
     logger.info("wrote %s", args.output)
     return 0
 
