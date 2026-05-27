@@ -875,6 +875,14 @@ def write_candidate_parquet(
             "opentargets_targets": list(c.opentargets_targets),
             "opentargets_pathways": list(c.opentargets_pathways),
             "opentargets_indication_max_phase": c.opentargets_indication_max_phase,
+            "opentargets_tractability_modalities":
+                list(c.opentargets_tractability_modalities),
+            "opentargets_tractability_labels":
+                list(c.opentargets_tractability_labels),
+            "opentargets_loeuf_min": c.opentargets_loeuf_min,
+            "opentargets_genetic_score": c.opentargets_genetic_score,
+            "opentargets_genetic_score_max_any_indication":
+                c.opentargets_genetic_score_max_any_indication,
             # Reactome (joined on UniProt accessions in drug_targets)
             "reactome_pathway_ids": list(c.reactome_pathway_ids),
             "reactome_pathway_names": list(c.reactome_pathway_names),

@@ -3,13 +3,24 @@
 Reads OpenTargets Platform Parquet datasets (downloaded manually — see
 the "Manual download" section in the enrichment plan) and writes a slim
 indexed SQLite that `OpenTargetsEnrichment` can open read-only and look
-up by normalized drug name. Two tables:
+up by normalized drug name. Three tables:
 
     name_opentargets_drug(query_norm, chembl_id, drug_name, moa_text,
                           action_type, target_symbols, target_ensembl,
-                          pathways)
+                          pathways, tractability_modalities,
+                          tractability_labels, loeuf_min)
     name_opentargets_indications(chembl_id, indication_efo_id,
                                  indication_name, indication_max_phase)
+    name_opentargets_target_disease_evidence(
+        chembl_id, ensembl_id, efo_id, genetic_score)
+
+The `tractability_*` and `loeuf_min` columns aggregate across each
+drug's targets (union of category labels; min LOEUF across targets —
+lower = more constrained). The `target_disease_evidence` table stores
+OpenTargets `associationByDatatypeDirect` `genetic_association` scores
+joined onto the drug's targets, so the enrichment can fetch a per-
+(drug, indication) genetic score without re-reading the full ~10M-row
+association dataset at runtime.
 
 `query_norm` is computed with the same `canonicalize_drug_name`
 normalizer the rest of the pipeline uses, so OT lookups compose with the
@@ -54,6 +65,13 @@ Download hint (as of 2026)
         rsync -rvz rsync.ebi.ac.uk::pub/databases/opentargets/platform/25.03/output/etl/parquet/molecule/ data/opentargets/25.03/molecule/
         rsync -rvz rsync.ebi.ac.uk::pub/databases/opentargets/platform/25.03/output/etl/parquet/mechanismOfAction/ data/opentargets/25.03/mechanismOfAction/
         rsync -rvz rsync.ebi.ac.uk::pub/databases/opentargets/platform/25.03/output/etl/parquet/targets/ data/opentargets/25.03/targets/
+        rsync -rvz rsync.ebi.ac.uk::pub/databases/opentargets/platform/25.03/output/etl/parquet/associationByDatatypeDirect/ data/opentargets/25.03/associationByDatatypeDirect/
+
+    The associationByDatatypeDirect subdir is optional — if absent the
+    `name_opentargets_target_disease_evidence` table is left empty and
+    the enrichment falls back to skipping the genetic-score feature.
+    Tractability + LOEUF are pulled from the `targets/` parquet and need
+    no extra download.
 """
 
 from __future__ import annotations
@@ -98,6 +116,12 @@ _INDICATION_CANDIDATE_DIRS = (
     "drug_indication", "indication", "indications",
 )
 _TARGETS_CANDIDATE_DIRS = ("target", "targets")
+_ASSOCIATIONS_CANDIDATE_DIRS = (
+    "associationByDatatypeDirect",
+    "association_by_datatype_direct",
+    "associationByDatatypeIndirect",
+    "association_by_datatype_indirect",
+)
 
 # Aggregation caps to keep snapshot lean and enrichment output readable.
 # A drug with dozens of MoAs or hundreds of pathways points at a noisy
@@ -106,6 +130,12 @@ _MOA_CAP = 3
 _ACTION_TYPE_CAP = 3
 _PATHWAY_CAP = 20
 _TARGET_SYMBOL_CAP = 50
+_TRACTABILITY_LABEL_CAP = 30
+
+# Only this datatype is treated as "genetic evidence" — OT exposes
+# several association datatypes (literature, somatic_mutation, etc.)
+# but `genetic_association` is the one downstream callers want.
+_GENETIC_DATATYPE = "genetic_association"
 
 
 def parse_release_number(opentargets_dir: Path) -> int:
@@ -262,8 +292,97 @@ def load_moa_table(moa_dir: Path):
     return tbl
 
 
+def _extract_loeuf(raw_constraint) -> float | None:
+    """Pull LOEUF from an OT target `constraint` / `geneticConstraint` list.
+
+    OT exposes a list of structs with `constraintType` in {"syn", "mis",
+    "lof"}. LOEUF is the upper bound of the observed/expected LoF ratio
+    on the "lof" row — lower values = more constraint = more disease-
+    relevance. Different releases label the score field differently:
+    `oe_ci_upper`, `oeUpper`, `upperBin`, or a generic `score`. We try
+    those names in order, falling back to None if no row resolves.
+    """
+    if not raw_constraint:
+        return None
+    for entry in raw_constraint:
+        if not isinstance(entry, dict):
+            continue
+        ctype = (
+            entry.get("constraintType")
+            or entry.get("constraint_type")
+            or entry.get("type")
+            or ""
+        )
+        if str(ctype).lower() != "lof":
+            continue
+        for key in (
+            "oe_ci_upper", "oeCiUpper", "oeUpper", "oe_upper",
+            "upperBin", "upper_bin", "score",
+        ):
+            v = entry.get(key)
+            if v is None:
+                continue
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _extract_tractability(raw_tractability) -> tuple[list[str], list[str]]:
+    """Return (modalities, labels) from an OT target `tractability` list.
+
+    OT stores tractability as a list of structs, one per (modality, label)
+    bucket with a boolean `value`. We keep only the rows where the bucket
+    is true and surface both the modality (e.g. "SM", "AB", "PR", "OC",
+    "OM") and the human-readable label (e.g. "Clinical_Precedence_sm").
+    Deduplication preserves first-seen order; the caller caps the list.
+    """
+    if not raw_tractability:
+        return [], []
+    modalities: list[str] = []
+    labels: list[str] = []
+    seen_mod: set[str] = set()
+    seen_lab: set[str] = set()
+    for entry in raw_tractability:
+        if not isinstance(entry, dict):
+            continue
+        # OT 22.x+ uses (modality, id, value); some releases use `label`
+        # instead of `id`. Older releases store boolean buckets at the
+        # top-level (no value column) so a present row implies True.
+        val = entry.get("value")
+        if val is False:
+            continue
+        modality = (
+            entry.get("modality")
+            or entry.get("category")
+            or ""
+        )
+        label = (
+            entry.get("id")
+            or entry.get("label")
+            or entry.get("name")
+            or ""
+        )
+        if modality and modality not in seen_mod:
+            seen_mod.add(modality)
+            modalities.append(str(modality))
+        if label and label not in seen_lab:
+            seen_lab.add(label)
+            labels.append(str(label))
+    return modalities, labels
+
+
 def load_targets_table(targets_dir: Path) -> dict[str, dict]:
-    """Return {ensembl_id: {approvedSymbol, pathways: [name,...]}}."""
+    """Return {ensembl_id: {approvedSymbol, pathways, tractability_modalities,
+    tractability_labels, loeuf}}.
+
+    Pulls pathways (Reactome IDs/names), tractability (per-modality
+    druggability buckets), and gnomAD-derived LoF constraint (LOEUF)
+    from the OT `targets/` parquet in a single read. Columns are
+    detected leniently to tolerate the column-name drift OT introduces
+    between releases.
+    """
     schema = pq.ParquetFile(
         next(iter(targets_dir.glob("*.parquet")))
     ).schema_arrow
@@ -274,11 +393,20 @@ def load_targets_table(targets_dir: Path) -> dict[str, dict]:
         available, "approvedSymbol", "approved_symbol", "symbol"
     )
     pathways_col = _first_present(available, "pathways", "reactome")
+    tractability_col = _first_present(
+        available, "tractability", "tractabilityAssessments",
+    )
+    constraint_col = _first_present(
+        available, "constraint", "geneticConstraint", "constraints",
+    )
     if not id_col:
         raise RuntimeError(
             f"targets dataset lacks an id/ensemblId column; saw {sorted(available)}"
         )
-    cols = [c for c in (id_col, symbol_col, pathways_col) if c]
+    cols = [
+        c for c in (id_col, symbol_col, pathways_col, tractability_col, constraint_col)
+        if c
+    ]
     tbl = pads.dataset(str(targets_dir), format="parquet").to_table(columns=cols)
     out: dict[str, dict] = {}
     rows = tbl.to_pylist()
@@ -296,13 +424,91 @@ def load_targets_table(targets_dir: Path) -> dict[str, dict]:
                         pathways.append(name)
                 elif isinstance(p, str):
                     pathways.append(p)
+        modalities, labels = _extract_tractability(
+            row.get(tractability_col) if tractability_col else None
+        )
+        loeuf = _extract_loeuf(
+            row.get(constraint_col) if constraint_col else None
+        )
         out[str(ensembl)] = {
             "approvedSymbol": row.get(symbol_col) if symbol_col else None,
             "pathways": pathways,
+            "tractability_modalities": modalities,
+            "tractability_labels": labels,
+            "loeuf": loeuf,
         }
+    n_tract = sum(1 for v in out.values() if v["tractability_modalities"])
+    n_loeuf = sum(1 for v in out.values() if v["loeuf"] is not None)
     logger.info(
-        "Loaded targets table: %d ensembl ids (with pathways column: %s)",
-        len(out), bool(pathways_col),
+        "Loaded targets table: %d ensembl ids (pathways=%s, "
+        "tractability=%d, loeuf=%d)",
+        len(out), bool(pathways_col), n_tract, n_loeuf,
+    )
+    return out
+
+
+def load_associations_table(
+    associations_dir: Path,
+    keep_ensembls: set[str],
+) -> dict[str, list[tuple[str, float]]]:
+    """Return {ensembl_id: [(efo_id, genetic_score), ...]} for ensembls in ``keep_ensembls``.
+
+    The full OT association dataset is ~10M rows of (target × disease ×
+    datatype × score); we filter to the `genetic_association` datatype
+    and only retain rows for ensembls that some drug actually targets.
+    That keeps the join lean — the snapshot is sized to fit a single
+    SQLite file rather than mirroring the whole OT release.
+    """
+    schema = pq.ParquetFile(
+        next(iter(associations_dir.glob("*.parquet")))
+    ).schema_arrow
+    available = {f.name for f in schema}
+
+    target_col = _first_present(
+        available, "targetId", "target_id", "ensemblId",
+    )
+    disease_col = _first_present(
+        available, "diseaseId", "disease_id", "efoId",
+    )
+    datatype_col = _first_present(
+        available, "datatypeId", "datatype_id", "datatype",
+    )
+    score_col = _first_present(
+        available, "score", "associationScore",
+    )
+    if not (target_col and disease_col and score_col):
+        raise RuntimeError(
+            f"associations dataset is missing required columns; saw {sorted(available)}"
+        )
+    cols = [c for c in (target_col, disease_col, datatype_col, score_col) if c]
+
+    tbl = pads.dataset(str(associations_dir), format="parquet").to_table(columns=cols)
+    out: dict[str, list[tuple[str, float]]] = {}
+    n_seen = 0
+    n_kept = 0
+    for row in tbl.to_pylist():
+        n_seen += 1
+        if datatype_col:
+            dt = row.get(datatype_col)
+            if dt and str(dt) != _GENETIC_DATATYPE:
+                continue
+        ensembl = row.get(target_col)
+        if not ensembl or str(ensembl) not in keep_ensembls:
+            continue
+        efo = row.get(disease_col)
+        score = row.get(score_col)
+        if not efo or score is None:
+            continue
+        try:
+            score_f = float(score)
+        except (TypeError, ValueError):
+            continue
+        out.setdefault(str(ensembl), []).append((str(efo), score_f))
+        n_kept += 1
+    logger.info(
+        "Loaded associations table: %d/%d rows kept after "
+        "datatype=%s + target-ensembl filter (covers %d ensembls)",
+        n_kept, n_seen, _GENETIC_DATATYPE, len(out),
     )
     return out
 
@@ -376,11 +582,17 @@ def aggregate_drug_level(
                 if t:
                     bucket["target_ensembl"].append(str(t))
 
-    # Resolve Ensembl IDs to approved symbols + union their pathways.
+    # Resolve Ensembl IDs to approved symbols + union their pathways +
+    # aggregate tractability buckets / LOEUF across the drug's targets.
+    # Tractability: union of (modalities, labels) across all targets.
+    # LOEUF: min across targets (lower = more constrained gene).
     for bucket in agg.values():
         ensembls = _dedup_cap(bucket.pop("target_ensembl"), _TARGET_SYMBOL_CAP)
         symbols: list[str] = []
         pathways: list[str] = []
+        modalities: list[str] = []
+        labels: list[str] = []
+        loeuf_vals: list[float] = []
         for ensembl in ensembls:
             info = targets_map.get(ensembl)
             if not info:
@@ -389,9 +601,19 @@ def aggregate_drug_level(
                 symbols.append(str(info["approvedSymbol"]))
             for p in info.get("pathways") or []:
                 pathways.append(p)
+            for m in info.get("tractability_modalities") or []:
+                modalities.append(str(m))
+            for lbl in info.get("tractability_labels") or []:
+                labels.append(str(lbl))
+            loeuf = info.get("loeuf")
+            if loeuf is not None:
+                loeuf_vals.append(float(loeuf))
         bucket["target_ensembl"] = ensembls
         bucket["target_symbols"] = _dedup_cap(symbols, _TARGET_SYMBOL_CAP)
         bucket["pathways"] = _dedup_cap(pathways, _PATHWAY_CAP)
+        bucket["tractability_modalities"] = _dedup_cap(modalities, _TRACTABILITY_LABEL_CAP)
+        bucket["tractability_labels"] = _dedup_cap(labels, _TRACTABILITY_LABEL_CAP)
+        bucket["loeuf_min"] = min(loeuf_vals) if loeuf_vals else None
         bucket["moa_text"] = "|".join(_dedup_cap(bucket.pop("moa_list"), _MOA_CAP))
         bucket["action_type"] = "|".join(
             _dedup_cap(bucket.pop("action_list"), _ACTION_TYPE_CAP)
@@ -510,9 +732,16 @@ def write_snapshot(
     drug_agg: dict[str, dict],
     indications: list[tuple[str, str | None, str | None, int | None]],
     name_index: dict[str, list[str]],
+    associations: dict[str, list[tuple[str, float]]],
     release: int,
 ) -> None:
-    """Write the slim SQLite snapshot with both tables and the release stamp."""
+    """Write the slim SQLite snapshot with all tables and the release stamp.
+
+    ``associations`` maps {ensembl_id: [(efo_id, genetic_score), ...]} —
+    pre-filtered to the genetic_association datatype and the ensembls
+    that some drug actually targets. May be empty if the OT release
+    didn't ship an associations dir.
+    """
     if out_path.exists():
         out_path.unlink()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -524,14 +753,17 @@ def write_snapshot(
         conn.execute(
             """
             CREATE TABLE name_opentargets_drug (
-                query_norm        TEXT NOT NULL,
-                chembl_id         TEXT NOT NULL,
-                drug_name         TEXT,
-                moa_text          TEXT,
-                action_type       TEXT,
-                target_symbols    TEXT,
-                target_ensembl    TEXT,
-                pathways          TEXT,
+                query_norm                TEXT NOT NULL,
+                chembl_id                 TEXT NOT NULL,
+                drug_name                 TEXT,
+                moa_text                  TEXT,
+                action_type               TEXT,
+                target_symbols            TEXT,
+                target_ensembl            TEXT,
+                pathways                  TEXT,
+                tractability_modalities   TEXT,
+                tractability_labels       TEXT,
+                loeuf_min                 REAL,
                 PRIMARY KEY (query_norm, chembl_id)
             )
             """
@@ -544,6 +776,17 @@ def write_snapshot(
                 indication_name         TEXT,
                 indication_max_phase    INTEGER,
                 PRIMARY KEY (chembl_id, indication_efo_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE name_opentargets_target_disease_evidence (
+                chembl_id      TEXT NOT NULL,
+                ensembl_id     TEXT NOT NULL,
+                efo_id         TEXT NOT NULL,
+                genetic_score  REAL NOT NULL,
+                PRIMARY KEY (chembl_id, ensembl_id, efo_id)
             )
             """
         )
@@ -582,13 +825,16 @@ def write_snapshot(
                         "|".join(bucket.get("target_symbols") or []) or None,
                         "|".join(bucket.get("target_ensembl") or []) or None,
                         "|".join(bucket.get("pathways") or []) or None,
+                        "|".join(bucket.get("tractability_modalities") or []) or None,
+                        "|".join(bucket.get("tractability_labels") or []) or None,
+                        bucket.get("loeuf_min"),
                     )
                 )
 
         if drug_rows:
             conn.executemany(
                 "INSERT INTO name_opentargets_drug VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?)",
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 drug_rows,
             )
 
@@ -602,11 +848,37 @@ def write_snapshot(
                 ind_rows,
             )
 
+        # Target-disease evidence: cross each drug's targets with the
+        # pre-filtered associations to produce (chembl_id, ensembl_id,
+        # efo_id, genetic_score) rows. Kept in long form so the
+        # enrichment can aggregate (max across targets) at lookup time.
+        evidence_rows: list[tuple[str, str, str, float]] = []
+        if associations:
+            for chembl_id, bucket in drug_agg.items():
+                if chembl_id not in retained_chembl_ids:
+                    continue
+                for ensembl in bucket.get("target_ensembl") or []:
+                    for efo, score in associations.get(str(ensembl), ()):
+                        evidence_rows.append(
+                            (str(chembl_id), str(ensembl), str(efo), float(score))
+                        )
+        if evidence_rows:
+            conn.executemany(
+                "INSERT OR IGNORE INTO "
+                "name_opentargets_target_disease_evidence VALUES "
+                "(?, ?, ?, ?)",
+                evidence_rows,
+            )
+
         conn.execute(
             "CREATE INDEX idx_ot_query_norm ON name_opentargets_drug(query_norm)"
         )
         conn.execute(
             "CREATE INDEX idx_ot_ind_chembl ON name_opentargets_indications(chembl_id)"
+        )
+        conn.execute(
+            "CREATE INDEX idx_ot_evidence_chembl_efo "
+            "ON name_opentargets_target_disease_evidence(chembl_id, efo_id)"
         )
         conn.execute(f"PRAGMA user_version = {release}")
         conn.commit()
@@ -620,10 +892,20 @@ def write_snapshot(
         n_inds = conn.execute(
             "SELECT COUNT(*) FROM name_opentargets_indications"
         ).fetchone()[0]
+        n_ev = conn.execute(
+            "SELECT COUNT(*) FROM name_opentargets_target_disease_evidence"
+        ).fetchone()[0]
+        n_tract = conn.execute(
+            "SELECT COUNT(*) FROM name_opentargets_drug "
+            "WHERE tractability_modalities IS NOT NULL"
+        ).fetchone()[0]
+        n_loeuf = conn.execute(
+            "SELECT COUNT(*) FROM name_opentargets_drug WHERE loeuf_min IS NOT NULL"
+        ).fetchone()[0]
         logger.info(
-            "Wrote OT snapshot: %d drugs | %d query_norms | %d indications "
-            "(release=%d)",
-            n_drugs, n_norms, n_inds, release,
+            "Wrote OT snapshot: %d drugs | %d query_norms | %d indications | "
+            "%d genetic-evidence rows | tractability=%d | loeuf=%d (release=%d)",
+            n_drugs, n_norms, n_inds, n_ev, n_tract, n_loeuf, release,
         )
     finally:
         conn.close()
@@ -663,6 +945,23 @@ def build_snapshot(
             "molecule.indications)"
         )
 
+    # associationByDatatypeDirect is optional — if missing the
+    # target-disease evidence table is left empty and the enrichment
+    # falls back to skipping the genetic-score feature.
+    associations_dir: Path | None = None
+    for name in _ASSOCIATIONS_CANDIDATE_DIRS:
+        candidate = opentargets_dir / name
+        if candidate.exists() and candidate.is_dir():
+            associations_dir = candidate
+            break
+    if associations_dir is not None:
+        logger.info("associations dir:       %s", associations_dir)
+    else:
+        logger.info(
+            "associations dir:       (none — genetic-evidence table will be empty; "
+            "sync associationByDatatypeDirect/ to populate)"
+        )
+
     name_index = load_chembl_name_index(chembl_snapshot)
     molecule_tbl = load_molecule_table(molecule_dir)
     moa_tbl = load_moa_table(moa_dir)
@@ -674,7 +973,19 @@ def build_snapshot(
     else:
         indications = flatten_indications(molecule_tbl)
 
-    write_snapshot(out_path, drug_agg, indications, name_index, release)
+    # Filter the assocations dataset down to the ensembl set that any
+    # drug in our aggregation actually targets — the full table is too
+    # big to keep in memory at OT 25.x scale.
+    drug_target_ensembls: set[str] = set()
+    for bucket in drug_agg.values():
+        for ensembl in bucket.get("target_ensembl") or []:
+            drug_target_ensembls.add(str(ensembl))
+    if associations_dir is not None and drug_target_ensembls:
+        associations = load_associations_table(associations_dir, drug_target_ensembls)
+    else:
+        associations = {}
+
+    write_snapshot(out_path, drug_agg, indications, name_index, associations, release)
 
 
 def main(argv: list[str] | None = None) -> int:

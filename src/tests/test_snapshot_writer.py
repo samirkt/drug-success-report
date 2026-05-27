@@ -83,6 +83,14 @@ def _enriched_candidate(**overrides) -> Candidate:
         opentargets_targets=["GENE1", "GENE2", "GENE3"],
         opentargets_pathways=["Pathway A", "Pathway B"],
         opentargets_indication_max_phase=4,
+        opentargets_tractability_modalities=["SM", "AB"],
+        opentargets_tractability_labels=[
+            "Clinical_Precedence_sm",
+            "Predicted_Tractable_ab_High_Confidence",
+        ],
+        opentargets_loeuf_min=0.42,
+        opentargets_genetic_score=0.71,
+        opentargets_genetic_score_max_any_indication=0.85,
     )
     base.update(overrides)
     return Candidate(**base)
@@ -213,6 +221,70 @@ class TestCandidateParquetTypes:
         assert list(df["opentargets_action_type"].iloc[0]) == [
             "INHIBITOR", "AGONIST", "MODULATOR",
         ]
+
+    def test_opentargets_tractability_genetics_roundtrip(self, tmp_path):
+        """Tractability list columns plus LOEUF + genetic-score scalars
+        land as native types on candidate_detail.parquet."""
+        cand = _enriched_candidate()
+        write_candidate_parquet(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "candidate_detail.parquet")
+        # Tractability stays list-typed (not pipe-joined strings).
+        for col in (
+            "opentargets_tractability_modalities",
+            "opentargets_tractability_labels",
+        ):
+            value = df[col].iloc[0]
+            assert not isinstance(value, str), f"{col} should be a list"
+            for elem in list(value):
+                assert isinstance(elem, str)
+        assert list(df["opentargets_tractability_modalities"].iloc[0]) == [
+            "SM", "AB",
+        ]
+        assert list(df["opentargets_tractability_labels"].iloc[0]) == [
+            "Clinical_Precedence_sm",
+            "Predicted_Tractable_ab_High_Confidence",
+        ]
+        # Scalars round-trip as floats.
+        assert df["opentargets_loeuf_min"].iloc[0] == pytest.approx(0.42)
+        assert df["opentargets_genetic_score"].iloc[0] == pytest.approx(0.71)
+        assert (
+            df["opentargets_genetic_score_max_any_indication"].iloc[0]
+            == pytest.approx(0.85)
+        )
+
+    def test_opentargets_genetics_null_when_unset(self, tmp_path):
+        """Candidate with default OT genetics/tractability fields lands
+        as empty lists + null scalars — keeps the column shape stable
+        across runs when the enrichment is off."""
+        cand = _enriched_candidate(
+            opentargets_tractability_modalities=[],
+            opentargets_tractability_labels=[],
+            opentargets_loeuf_min=None,
+            opentargets_genetic_score=None,
+            opentargets_genetic_score_max_any_indication=None,
+        )
+        write_candidate_parquet(
+            CandidateTable(candidates=[cand]),
+            AttributeTable(),
+            OutcomeTable(),
+            str(tmp_path),
+        )
+        df = pd.read_parquet(tmp_path / "candidate_detail.parquet")
+        assert list(df["opentargets_tractability_modalities"].iloc[0]) == []
+        assert list(df["opentargets_tractability_labels"].iloc[0]) == []
+        # Numeric Optional[float] columns of all-None values round-trip
+        # as NaN under pyarrow's Float64 inference — use pd.isna so the
+        # assertion works for both None and NaN.
+        assert pd.isna(df["opentargets_loeuf_min"].iloc[0])
+        assert pd.isna(df["opentargets_genetic_score"].iloc[0])
+        assert pd.isna(
+            df["opentargets_genetic_score_max_any_indication"].iloc[0]
+        )
 
 
 # ---------------------------------------------------------------------------

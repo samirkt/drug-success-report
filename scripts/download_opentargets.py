@@ -1,10 +1,17 @@
 """Download the OpenTargets Parquet datasets needed for the OT enrichment.
 
-Pulls three subdirectories from EBI's public mirror into a local
+Pulls five subdirectories from EBI's public mirror into a local
 directory, then confirms the expected Parquet files are present. Use
 rsync when available (fast + resumable); fall back to curl over HTTPS
 only if rsync is missing. This is **not** part of the pipeline — it
 runs once per OT release.
+
+The `associationByDatatypeDirect/` subdir is the largest of the five
+(several GB at OT 25.x — it carries every target × disease × datatype
+association). It is required for the genetic-evidence column on the
+candidate parquet; if you don't need that feature, pass
+``--skip associationByDatatypeDirect`` and the snapshot builder will
+emit an empty target-disease evidence table.
 
 Usage:
 
@@ -60,6 +67,14 @@ _DATASETS: list[tuple[str, list[str]]] = [
                            "mechanismsOfAction", "moa"]),
     ("indication",        ["drug_indication", "indication", "indications"]),
     ("targets",           ["target", "targets"]),
+    # Target × disease genetic-association scores. Big (~GB) but the
+    # only source for the genetic-evidence feature. Drop via `--skip
+    # associationByDatatypeDirect` if you don't need it.
+    ("associationByDatatypeDirect",
+                          ["association_by_datatype_direct",
+                           "associationByDatatypeDirect",
+                           "associationByDatatypeIndirect",
+                           "association_by_datatype_indirect"]),
 ]
 
 
@@ -162,15 +177,23 @@ def _resolve_alias(
     return None
 
 
-def download(release: str, dest: Path, dry_run: bool = False) -> None:
-    """Download all three OT datasets for a given release.
+def download(
+    release: str,
+    dest: Path,
+    dry_run: bool = False,
+    skip: set[str] | None = None,
+) -> None:
+    """Download all OT datasets for a given release.
 
     Output layout:
         dest/<release>/molecule/
         dest/<release>/mechanismOfAction/
+        dest/<release>/indication/
         dest/<release>/targets/
+        dest/<release>/associationByDatatypeDirect/
     """
     release_dir = dest / release
+    skip = skip or set()
     use_rsync = shutil.which("rsync") is not None
     if not use_rsync and not shutil.which("curl"):
         raise RuntimeError(
@@ -184,6 +207,9 @@ def download(release: str, dest: Path, dry_run: bool = False) -> None:
 
     total_gb_before = _dir_size_gb(release_dir)
     for local_name, aliases in _DATASETS:
+        if local_name in skip:
+            logger.info("Skipping %s (--skip)", local_name)
+            continue
         logger.info("Resolving %s (aliases: %s)", local_name, aliases)
         resolution = _resolve_alias(release, aliases)
         if resolution is None:
@@ -271,7 +297,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Download the OpenTargets Parquet datasets (molecule, "
-            "mechanismOfAction, targets) for a single release."
+            "mechanismOfAction, indication, targets, "
+            "associationByDatatypeDirect) for a single release."
         )
     )
     parser.add_argument(
@@ -289,7 +316,9 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("data/opentargets"),
         help=(
             "Parent directory that will contain <release>/molecule/, "
-            "<release>/mechanismOfAction/, and <release>/targets/. "
+            "<release>/mechanismOfAction/, <release>/indication/, "
+            "<release>/targets/, and "
+            "<release>/associationByDatatypeDirect/. "
             "Default: data/opentargets"
         ),
     )
@@ -308,11 +337,27 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Resolve remote names and report sizes without downloading.",
     )
+    parser.add_argument(
+        "--skip",
+        action="append",
+        default=[],
+        metavar="LOCAL",
+        help=(
+            "Skip a local dataset name. Repeatable. Useful for the big "
+            "associationByDatatypeDirect dataset when the genetic-evidence "
+            "feature isn't needed."
+        ),
+    )
     args = parser.parse_args(argv)
 
     _apply_overrides(args.override_path)
     try:
-        download(args.release, args.dest, dry_run=args.dry_run)
+        download(
+            args.release,
+            args.dest,
+            dry_run=args.dry_run,
+            skip=set(args.skip),
+        )
     except RuntimeError as exc:
         logger.error("%s", exc)
         return 1

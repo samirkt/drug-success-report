@@ -144,6 +144,28 @@ class Candidate:
     # when the candidate's `indication` (or `mesh_indication`) case-
     # insensitively matches an OT indication row for the same drug.
     opentargets_indication_max_phase: Optional[int] = None
+    # Tractability: union of per-modality druggability buckets across the
+    # candidate's targets, sourced from OT's target.tractability column.
+    # `modalities` is the coarse modality set (e.g. ["SM", "AB", "PR"]);
+    # `labels` retains the full assessment label list (e.g.
+    # ["Clinical_Precedence_sm", "Predicted_Tractable_ab_High_Confidence"]).
+    opentargets_tractability_modalities: list[str] = field(default_factory=list)
+    opentargets_tractability_labels: list[str] = field(default_factory=list)
+    # gnomAD LOEUF — upper bound of the observed/expected LoF ratio.
+    # Lower = more constrained gene = more likely to underlie disease.
+    # Aggregated as min across the candidate's targets (most-constrained
+    # target wins). None if no target had a LOEUF row.
+    opentargets_loeuf_min: Optional[float] = None
+    # OT target-disease genetic-association score (datatypeId =
+    # genetic_association in associationByDatatypeDirect). Max across the
+    # candidate's (target, indication-EFO) pairs — None if no target had
+    # genetic evidence for the candidate's matched EFO. The
+    # `..._max_any_indication` variant relaxes the indication constraint
+    # and surfaces the best genetic evidence across any disease the
+    # candidate's targets are linked to, as a target-quality fallback
+    # when indication match fails.
+    opentargets_genetic_score: Optional[float] = None
+    opentargets_genetic_score_max_any_indication: Optional[float] = None
     # Reactome — pathway membership joined on UniProt accessions in
     # `drug_targets`. Multi-target candidates aggregate by union across
     # all targets. None when stage skipped; False when target list was
