@@ -114,6 +114,11 @@ def write_candidate_detail(
         "opentargets_targets",
         "opentargets_pathways",
         "opentargets_indication_max_phase",
+        "opentargets_tractability_modalities",
+        "opentargets_tractability_labels",
+        "opentargets_loeuf_min",
+        "opentargets_genetic_score",
+        "opentargets_genetic_score_max_any_indication",
         # Reactome (joined on UniProt accessions in drug_targets)
         "reactome_pathway_ids",
         "reactome_pathway_names",
@@ -184,6 +189,25 @@ def write_candidate_detail(
                 "opentargets_indication_max_phase": (
                     str(c.opentargets_indication_max_phase)
                     if c.opentargets_indication_max_phase is not None else ""
+                ),
+                "opentargets_tractability_modalities": "|".join(
+                    c.opentargets_tractability_modalities
+                ),
+                "opentargets_tractability_labels": "|".join(
+                    c.opentargets_tractability_labels
+                ),
+                "opentargets_loeuf_min": (
+                    str(c.opentargets_loeuf_min)
+                    if c.opentargets_loeuf_min is not None else ""
+                ),
+                "opentargets_genetic_score": (
+                    str(c.opentargets_genetic_score)
+                    if c.opentargets_genetic_score is not None else ""
+                ),
+                "opentargets_genetic_score_max_any_indication": (
+                    str(c.opentargets_genetic_score_max_any_indication)
+                    if c.opentargets_genetic_score_max_any_indication is not None
+                    else ""
                 ),
                 "reactome_pathway_ids": "|".join(c.reactome_pathway_ids),
                 "reactome_pathway_names": "|".join(c.reactome_pathway_names),
